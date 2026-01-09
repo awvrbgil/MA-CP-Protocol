@@ -42,9 +42,22 @@ MA-CP 始于一个简单的“多AI辩论”脚本，但其长期愿景是成为
 
 ---
 
-## 🛠️ 快速开始
+> ## 🚀 快速开始
 
-> **👉 查看 [README.md](./README.md) 了解如何安装和运行第一个示例。**
+1.  **安装基础环境**：确保已安装 [Python 3.10+](https://www.python.org/downloads/) 和 [Ollama](https://ollama.com/)，并至少下载两个模型（如 `llama3.1:8b`）。
+2.  **克隆项目**：
+    ```bash
+    git clone https://github.com/awvrbgil/MA-CP-Protocol.git
+    cd MA-CP-Protocol
+    ```
+3.  **安装Python依赖**：
+    ```bash
+    pip install -r requirements.txt
+    ```
+4.  **配置与运行**：复制 `config.example.yaml` 为 `config.yaml`，根据你的模型修改配置，然后运行：
+    ```bash
+    python src/macp/scheduler.py
+    ```
 
 ---
 
