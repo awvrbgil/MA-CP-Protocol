@@ -1,1 +1,8 @@
-
+ollama:
+  base_url: "http://localhost:11434"
+models:
+  primary: "qwen3:4b"
+  secondary: "qwen2.5:3b"
+  secondary:" gemma3:4b"
+debate:
+  rounds: 3
