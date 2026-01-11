@@ -9,12 +9,12 @@
 ### 1. 微信支付
 扫描下方的微信赞赏码，直接赞助。
 
-[![微信赞助码](imgs/sponsor/wechat_pay.jpg)](imgs/sponsor/wechat_pay.jpg)
+[![微信赞助码](imgs/sponsor/wechat_pay.jpg)]
 
 ### 2. 支付宝
 扫描下方的支付宝收钱码进行赞助。
 
-[![支付宝赞助码](docs/imgs/sponsor/ailpay.jpg)](docs/imgs/sponsor/ailpay.jpg)
+[![支付宝赞助码](docs/imgs/sponsor/ailpay.jpg)]
 
 ## 赞助意味着什么？
 *   **对项目的直接投票**：你的赞助是对 **“多智能体协作”** 这一愿景最实在的认可，表明这个方向有价值、值得深入探索。
