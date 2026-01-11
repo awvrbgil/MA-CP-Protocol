@@ -4,6 +4,15 @@
 # 🧠 MA-CP：多智能体协作协议
 **Multi-Agent Collaboration Protocol**
 
+# MA CP: Multi-Agent Collaboration Protocol
+**The Protocol for AI Consensus Through Structured Debate.**
+
+> This project proposes a protocol layer for enabling trustworthy, structured debate and consensus formation among specialized AI agents. It aims to move beyond chaotic multi-agent chats toward a governed "parliamentary" system where knowledge can be accumulated as assets.
+>
+> **Status:** Early-stage vision and specification. We are actively seeking thought partners and contributors.
+>
+> *For detailed documentation in Chinese, please see below.*
+---
 > 我们正在尝试回答一个问题：当AI不再单打独斗，它们应该如何像团队一样思考？。
 
 ⚠️ 项目状态声明
