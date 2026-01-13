@@ -180,11 +180,3 @@ Powers limited to: approving MIPs, managing community treasury, certifying compa
 
 **5.3 External Protocol Compatibility & Certification**  
 Defines a compatibility test suite. Implementations that pass receive the “MA CP Compatible” badge and are listed in the official registry, ensuring baseline quality across the ecosystem.
-
----
-**Changes Made:**
-- Unified terminology between EN & CN versions.
-- Simplified sentences, removed redundant phrasing.
-- Kept technical accuracy while improving readability.
-- Adjusted formatting for consistency.
-- Removed overly explanatory or repetitive passages.
