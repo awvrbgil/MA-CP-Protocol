@@ -1,11 +1,11 @@
 """
 ===============================================================================
-多AI协作调度器 v5.0 - 优化版 (单文件版本)
+多AI协作调度器 v5.0 - 终极优化版 (单文件版本)
 MACP: Multi-Agent Collaboration Platform (多AI协作平台)
 ===============================================================================
 
 核心功能：
-├── 🤖 AI辩论系统 - 支持9种角色，多回合智能辩论
+├── 🤖 AI辩论系统 - 支持9种专业角色，多回合智能辩论
 ├── 🎯 共识度检测 - AI深度分析，实时监控辩论共识
 ├── 🐢 海龟汤游戏 - AI推理问答互动模式
 ├── 📊 并行提问 - 同时向多个AI模型提问
@@ -24,7 +24,7 @@ MACP: Multi-Agent Collaboration Platform (多AI协作平台)
 ├── Python 3.7+ - 运行环境要求
 └── requests库 - 网络请求依赖
 
-作者：awvrbgil
+作者：匿名开发者
 创建时间：2026年1月8日
 版本：v5.0
 ===============================================================================
@@ -259,7 +259,7 @@ class ConsensusDetector:
         return len(common_words) / total_words if total_words > 0 else 0.0
 
     @staticmethod
-    def analyze_debate_consensus(client, coordinator_model: str, question: str,
+    def analyze_debate_consensus(scheduler, coordinator_model: str, question: str,
                                 debate_history: List[Dict[str, Any]], role1: str, role2: str) -> Tuple[float, str, Dict[str, Any]]:
         """AI驱动的辩论共识深度分析
 
@@ -273,7 +273,7 @@ class ConsensusDetector:
         语义共识，而不仅仅是关键词匹配
 
         Args:
-            client: Ollama客户端实例
+            scheduler: AICouncilScheduler实例
             coordinator_model (str): 协调AI模型名称
             question (str): 原始辩论问题
             debate_history (List[Dict[str, Any]]): 完整的辩论历史记录
@@ -328,7 +328,13 @@ class ConsensusDetector:
 
 请确保consensus_percentage是基于双方最新回合内容的准确评估。"""
 
-            response = client.generate_response(coordinator_model, consensus_prompt, max_tokens=800, streaming=False)
+            coord_client, coord_model, is_api = scheduler._get_client_for_model(coordinator_model)
+            if is_api:
+                response = coord_client.generate_response(consensus_prompt, max_tokens=800, temperature=scheduler.config.temperature)
+            else:
+                response = coord_client.generate_response(coord_model, consensus_prompt, max_tokens=800,
+                                                        temperature=scheduler.config.temperature, timeout=scheduler.config.timeout,
+                                                        streaming=False)
 
             if response.get("success"):
                 result_text = response.get("response", "")
@@ -342,7 +348,7 @@ class ConsensusDetector:
                 )
                 return traditional_score, "AI分析失败，使用传统方法", {}
 
-        except Exception as e:
+        except (AICouncilException, requests.exceptions.RequestException, json.JSONDecodeError, ValueError) as e:
             logger.error(f"AI共识检测出错: {e}")
             return 0.0, f"检测出错: {str(e)}", {}
 
@@ -381,12 +387,12 @@ class ConsensusDetector:
             return ConsensusDetector._extract_consensus_from_text(text)
 
     @staticmethod
-    def calculate_ai_consensus(client, coordinator_model: str, question: str,
+    def calculate_ai_consensus(scheduler, coordinator_model: str, question: str,
                              debate_history: List[Dict[str, Any]], role1: str, role2: str) -> Tuple[float, str, Dict[str, Any]]:
         """通过AI分析计算共识度
 
         Args:
-            client: Ollama客户端实例
+            scheduler: AICouncilScheduler实例
             coordinator_model: 协调AI模型名称
             question: 辩论问题
             debate_history: 辩论历史记录
@@ -426,7 +432,13 @@ class ConsensusDetector:
     "key_disagreements": ["分歧点1", "分歧点2"]
 }}"""
 
-            response = client.generate_response(coordinator_model, consensus_prompt, max_tokens=600, streaming=False)
+            coord_client, coord_model, is_api = scheduler._get_client_for_model(coordinator_model)
+            if is_api:
+                response = coord_client.generate_response(consensus_prompt, max_tokens=600, temperature=scheduler.config.temperature)
+            else:
+                response = coord_client.generate_response(coord_model, consensus_prompt, max_tokens=600,
+                                                        temperature=scheduler.config.temperature, timeout=scheduler.config.timeout,
+                                                        streaming=False)
 
             if response.get("success"):
                 result_text = response.get("response", "")
@@ -488,7 +500,7 @@ class ConsensusDetector:
                 logger.warning("AI共识分析请求失败")
                 return 0.0, "分析失败", {}
 
-        except Exception as e:
+        except (AICouncilException, requests.exceptions.RequestException, json.JSONDecodeError, ValueError) as e:
             logger.error(f"AI共识检测出错: {e}")
             return 0.0, f"检测出错: {str(e)}", {}
 
@@ -498,7 +510,14 @@ class ConsensusDetector:
         """当AI分析失败时的后备共识分析
 
         基于关键词匹配和辩论模式提供简单的共识度估算
+        
+        Args:
+            debate_history: 辩论历史记录
+            role1: 第一个辩论者角色（未使用，保留用于未来扩展）
+            role2: 第二个辩论者角色（未使用，保留用于未来扩展）
+            question: 辩论问题（未使用，保留用于未来扩展）
         """
+        _ = (role1, role2, question)  # 标记参数已知但未使用（为未来扩展保留）
         try:
             # 提取所有辩论内容
             all_content = ""
@@ -541,7 +560,7 @@ class ConsensusDetector:
 
             return consensus_score, analysis, data
 
-        except Exception as e:
+        except (ValueError, KeyError, TypeError) as e:
             logger.error(f"Fallback分析失败: {e}")
             return 0.5, "后备分析失败，使用默认中等共识度", {'method': 'default'}
 
@@ -573,26 +592,28 @@ class ConsensusDetector:
             return 0.5, text, {}
 
     @staticmethod
-    def display_consensus_bar(percentage: int, width: int = 50):
+    def display_consensus_bar(percentage: float, width: int = 50):
         """显示共识度条形图"""
-        filled = int(width * percentage / 100)
+        percentage_int = int(percentage) if isinstance(percentage, float) else percentage
+        filled = int(width * percentage_int / 100)
         bar = "█" * filled + "░" * (width - filled)
 
         # 根据共识度选择颜色描述
-        if percentage >= 80:
+        percentage_int = int(percentage) if isinstance(percentage, float) else percentage
+        if percentage_int >= 80:
             color_desc = "深绿"
-        elif percentage >= 70:
+        elif percentage_int >= 70:
             color_desc = "绿色"
-        elif percentage >= 60:
+        elif percentage_int >= 60:
             color_desc = "黄绿"
-        elif percentage >= 50:
+        elif percentage_int >= 50:
             color_desc = "黄色"
-        elif percentage >= 40:
+        elif percentage_int >= 40:
             color_desc = "橙色"
         else:
             color_desc = "红色"
 
-        print(f"🔄 共识度: [{bar}] {percentage}% ({color_desc})")
+        print(f"🔄 共识度: [{bar}] {percentage_int}% ({color_desc})")
 
     @staticmethod
     def get_consensus_level_description(percentage: float) -> str:
@@ -650,7 +671,7 @@ class HistoryManager:
             logger.info(f"💾 记录已保存到：{self.history_file}")
             self.history.clear()  # 清空缓存
 
-        except Exception as e:
+        except (OSError, IOError, json.JSONDecodeError, ValueError) as e:
             logger.error(f"保存历史记录失败：{e}")
 
     def get_recent_history(self, limit: int = 5) -> List[Dict[str, Any]]:
@@ -762,6 +783,11 @@ class InputValidator:
                 return default
             print("请输入 y/yes/是 或 n/no/否")
 
+    @staticmethod
+    def get_yes_no_input(prompt: str, default: bool = False) -> bool:
+        """获取是/否输入（别名方法）"""
+        return InputValidator.validate_yes_no_input(prompt, default)
+
 class ProgressTracker:
     """进度跟踪器"""
 
@@ -828,6 +854,35 @@ class Config:
         self.model_2 = "llama3.2:3b"                 # 辅助辩论AI模型，用于第二个辩论者
         self.coordinator_model = "gemma3:4b"        # 共识分析协调AI，用于分析辩论共识度
 
+        # ============ API模式配置 ============
+        self.api_mode_enabled = False               # 是否启用API模式
+        self.api_provider = "custom"               # API提供方标识：siliconflow/deepseek/volcengine/custom
+        self.api_base_url = "https://api.openai.com/v1"              # API基础地址（不含具体endpoint）
+        self.api_url = "https://api.openai.com/v1/chat/completions"  # API服务地址（chat completions endpoint）
+        self.api_key = ""                          # API密钥
+        self.api_model = "gpt-3.5-turbo"           # API使用的模型名称
+        self.model_1_use_api = False                # 模型1是否使用API
+        self.model_2_use_api = False                # 模型2是否使用API
+        self.coordinator_use_api = False            # 协调AI是否使用API
+        # 每个AI独立的API配置（若为空则回退到全局配置）
+        self.model_1_api_provider = ""
+        self.model_1_api_base_url = ""
+        self.model_1_api_url = ""
+        self.model_1_api_key = ""
+        self.model_1_api_model = ""
+
+        self.model_2_api_provider = ""
+        self.model_2_api_base_url = ""
+        self.model_2_api_url = ""
+        self.model_2_api_key = ""
+        self.model_2_api_model = ""
+
+        self.coordinator_api_provider = ""
+        self.coordinator_api_base_url = ""
+        self.coordinator_api_url = ""
+        self.coordinator_api_key = ""
+        self.coordinator_api_model = ""
+
         # ============ AI模型生成参数 ============
         self.timeout = 90          # API请求超时时间(秒)，防止网络请求卡住
         self.max_tokens = 1000     # 单次生成的最大token数，控制回答长度
@@ -878,7 +933,7 @@ class Config:
                 with open(filepath, 'r', encoding='utf-8') as f:
                     config_data = json.load(f)
                     self.update_from_dict(config_data)
-            except Exception as e:
+            except (OSError, IOError, json.JSONDecodeError, ValueError) as e:
                 logger.warning(f"加载配置文件失败: {e}")
 
     def save_to_file(self, filepath: str):
@@ -887,7 +942,7 @@ class Config:
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
-        except Exception as e:
+        except (OSError, IOError, json.JSONDecodeError, ValueError) as e:
             logger.warning(f"保存配置文件失败: {e}")
 
 # 创建全局配置实例，整个系统共享同一份配置
@@ -1416,6 +1471,144 @@ class OllamaClient:
             logger.error(f"获取运行中模型时发生错误: {e}")
             return []
 
+# ==================== 【API客户端】 ====================
+# 支持外部API服务的客户端，用于混合使用Ollama和API模型
+
+class APIClient:
+    """外部API服务客户端
+
+    支持OpenAI格式的API调用，提供统一的接口来调用外部AI服务。
+    可以与Ollama模型混合使用，每个API模型都是独立的实例。
+    """
+
+    def __init__(self, api_url: str, api_key: str, model_name: str, timeout: int = 90):
+        """初始化API客户端
+
+        Args:
+            api_url: API服务地址
+            api_key: API密钥
+            model_name: API使用的模型名称
+            timeout: 请求超时时间
+        """
+        self.api_url = api_url
+        self.api_key = api_key
+        self.model_name = model_name
+        self.timeout = timeout
+        self.session = requests.Session()
+
+        # 设置请求头
+        self.session.headers.update({
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        })
+
+    @staticmethod
+    def _infer_base_url(api_url: str) -> str:
+        """从 chat completions URL 推断 base url（用于 /models 等接口）"""
+        url = (api_url or "").rstrip("/")
+        for suffix in ("/chat/completions",):
+            if url.endswith(suffix):
+                return url[: -len(suffix)]
+        # 已经是 base 的情况
+        if url.endswith("/v1") or url.endswith("/api/v3") or url.endswith("/api/v3/"):
+            return url.rstrip("/")
+        return url
+
+    def list_models(self) -> List[str]:
+        """获取该 API 提供方可用模型列表（若不支持则返回空列表）"""
+        try:
+            base_url = APIClient._infer_base_url(self.api_url)
+            resp = self.session.get(f"{base_url}/models", timeout=15)
+            if resp.status_code != 200:
+                return []
+            data = resp.json()
+            # OpenAI 兼容：{"data":[{"id":"xxx"}, ...]}
+            models = []
+            for item in data.get("data", []):
+                model_id = item.get("id")
+                if model_id:
+                    models.append(model_id)
+            return models
+        except (requests.exceptions.RequestException, ValueError, json.JSONDecodeError):
+            return []
+
+    def check_connection(self) -> bool:
+        """检查API连接是否可用"""
+        try:
+            # 发送一个简单的测试请求
+            payload = {
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": "Hello"}],
+                "max_tokens": 10
+            }
+            response = self.session.post(self.api_url, json=payload, timeout=10)
+            return response.status_code == 200
+        except (requests.exceptions.RequestException, ValueError) as e:
+            logger.error(f"API连接检查失败: {e}")
+            return False
+
+    def generate_response(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> Dict[str, Any]:
+        """生成AI响应
+
+        Args:
+            prompt: 提示词
+            max_tokens: 最大token数
+            temperature: 温度参数
+
+        Returns:
+            包含响应信息的字典
+        """
+        start_time = time.time()
+
+        try:
+            payload = {
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": temperature
+            }
+
+            response = self.session.post(self.api_url, json=payload, timeout=self.timeout)
+
+            if response.status_code == 200:
+                result = response.json()
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+                elapsed_time = time.time() - start_time
+                return {
+                    "success": True,
+                    "model": f"API-{self.model_name}",
+                    "response": content,
+                    "time": elapsed_time
+                }
+            else:
+                elapsed_time = time.time() - start_time
+                error_msg = f"API请求失败，状态码: {response.status_code}"
+                try:
+                    error_detail = response.json()
+                    error_msg += f"，详情: {error_detail}"
+                except:
+                    pass
+
+                return {
+                    "success": False,
+                    "model": f"API-{self.model_name}",
+                    "response": f"（{error_msg}）",
+                    "time": elapsed_time,
+                    "error": error_msg
+                }
+
+        except Exception as e:
+            elapsed_time = time.time() - start_time
+            logger.error(f"API生成响应时发生错误: {e}")
+            return {
+                "success": False,
+                "model": f"API-{self.model_name}",
+                "response": f"（API请求错误: {str(e)}）",
+                "time": elapsed_time,
+                "error": str(e)
+            }
+
 # ==================== 【核心调度器】 ====================
 # MACP系统的核心业务逻辑控制器
 
@@ -1434,6 +1627,11 @@ class AICouncilScheduler:
     def __init__(self):
         self.config = config
         self.client = OllamaClient(self.config.ollama_url)
+        # 按模型分别维护API客户端
+        self.api_client = None  # 兼容旧字段，不再实际使用
+        self.api_client_model1: Optional[APIClient] = None
+        self.api_client_model2: Optional[APIClient] = None
+        self.api_client_coordinator: Optional[APIClient] = None
         self.history_manager = HistoryManager(self.config.history_file)
         self.progress_tracker = ProgressTracker()
         self.session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1446,28 +1644,108 @@ class AICouncilScheduler:
         try:
             logger.info("🚀 初始化MACP调度器...")
 
-            # 检查Ollama服务
-            if not self.client.check_service():
-                raise ConnectionError("Ollama服务不可用")
+            # 检查Ollama服务（如果需要的话）
+            if not self.config.api_mode_enabled or not (self.config.model_1_use_api and self.config.model_2_use_api and self.config.coordinator_use_api):
+                if not self.client.check_service():
+                    logger.warning("Ollama服务不可用，将仅使用API模式")
+                else:
+                    # 检查Ollama所需模型
+                    required_models = []
+                    if not self.config.model_1_use_api:
+                        required_models.append(self.config.model_1)
+                    if not self.config.model_2_use_api:
+                        required_models.append(self.config.model_2)
+                    if not self.config.coordinator_use_api:
+                        required_models.append(self.config.coordinator_model)
 
-            # 检查所需模型
-            required_models = [
-                self.config.model_1,
-                self.config.model_2,
-                self.config.coordinator_model
-            ]
+                    if required_models:
+                        model_status = self.client.check_models(required_models)
+                        missing_models = [model for model, available in model_status.items() if not available]
+                        if missing_models:
+                            logger.warning(f"Ollama缺少模型: {', '.join(missing_models)}，将尝试使用API替代")
 
-            model_status = self.client.check_models(required_models)
-            missing_models = [model for model, available in model_status.items() if not available]
-
-            if missing_models:
-                raise ModelNotFoundError(f"缺少模型: {', '.join(missing_models)}")
+            # 初始化API客户端（如果启用了API模式）
+            if self.config.api_mode_enabled:
+                self._initialize_api_client()
 
             logger.info("✅ 初始化完成")
 
         except Exception as e:
             logger.error(f"初始化失败: {e}")
             raise
+
+    def _initialize_api_client(self):
+        """初始化API客户端（按模型分别初始化）"""
+
+        def create_client(api_url: str, api_key: str, api_model: str) -> Optional[APIClient]:
+            api_url = (api_url or "").strip()
+            api_key = (api_key or "").strip()
+            api_model = (api_model or "").strip()
+            if not api_url or not api_key or not api_model:
+                return None
+            client = APIClient(
+                api_url=api_url,
+                api_key=api_key,
+                model_name=api_model,
+                timeout=self.config.timeout
+            )
+            # 仅做一次简单连通性检查，不强制失败
+            if client.check_connection():
+                logger.info(f"✅ API客户端已就绪: {api_model}")
+            else:
+                logger.warning(f"⚠️ API客户端连接检查失败: {api_model}")
+            return client
+
+        # 模型1
+        if self.config.model_1_use_api:
+            url = getattr(self.config, "model_1_api_url", "") or self.config.api_url
+            key = getattr(self.config, "model_1_api_key", "") or self.config.api_key
+            model = getattr(self.config, "model_1_api_model", "") or self.config.api_model
+            self.api_client_model1 = create_client(url, key, model)
+        else:
+            self.api_client_model1 = None
+
+        # 模型2
+        if self.config.model_2_use_api:
+            url = getattr(self.config, "model_2_api_url", "") or self.config.api_url
+            key = getattr(self.config, "model_2_api_key", "") or self.config.api_key
+            model = getattr(self.config, "model_2_api_model", "") or self.config.api_model
+            self.api_client_model2 = create_client(url, key, model)
+        else:
+            self.api_client_model2 = None
+
+        # 协调AI
+        if self.config.coordinator_use_api:
+            url = getattr(self.config, "coordinator_api_url", "") or self.config.api_url
+            key = getattr(self.config, "coordinator_api_key", "") or self.config.api_key
+            model = getattr(self.config, "coordinator_api_model", "") or self.config.api_model
+            self.api_client_coordinator = create_client(url, key, model)
+        else:
+            self.api_client_coordinator = None
+
+        if not any([self.api_client_model1, self.api_client_model2, self.api_client_coordinator]):
+            logger.warning("API模式已启用，但未成功初始化任何API客户端，请检查配置")
+
+    def _get_client_for_model(self, model_name: str) -> tuple:
+        """根据模型名称返回对应的客户端和模型标识
+
+        Returns:
+            (client, model_identifier, is_api_client) 元组
+        """
+        if not self.config.api_mode_enabled:
+            return self.client, model_name, False
+
+        if model_name == self.config.model_1 and self.config.model_1_use_api and self.api_client_model1:
+            api_model = getattr(self.config, "model_1_api_model", "") or self.config.api_model
+            return self.api_client_model1, f"API-{api_model}", True
+        elif model_name == self.config.model_2 and self.config.model_2_use_api and self.api_client_model2:
+            api_model = getattr(self.config, "model_2_api_model", "") or self.config.api_model
+            return self.api_client_model2, f"API-{api_model}", True
+        elif model_name == self.config.coordinator_model and self.config.coordinator_use_api and self.api_client_coordinator:
+            api_model = getattr(self.config, "coordinator_api_model", "") or self.config.api_model
+            return self.api_client_coordinator, f"API-{api_model}", True
+        else:
+            return self.client, model_name, False
 
     # ==================== 【核心方法】 ====================
     def ask_both_models(self, question: str, mode: str = "parallel",
@@ -1494,20 +1772,31 @@ class AICouncilScheduler:
             return []
 
     def _parallel_ask(self, question: str) -> List[Dict[str, Any]]:
-        """并行提问逻辑"""
+        """并行提问逻辑（支持API模式）"""
         logger.info("开始并行提问")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            future_to_model = {
-                executor.submit(self.client.generate_response,
-                              self.config.model_1, question,
-                              self.config.max_tokens, self.config.temperature,
-                              self.config.timeout): self.config.model_1,
-                executor.submit(self.client.generate_response,
-                              self.config.model_2, question,
-                              self.config.max_tokens, self.config.temperature,
-                              self.config.timeout): self.config.model_2
-            }
+            future_to_model = {}
+
+            # 模型1
+            if self.config.api_mode_enabled and self.config.model_1_use_api and self.api_client_model1:
+                future_to_model[executor.submit(self.api_client_model1.generate_response,
+                                              question, self.config.max_tokens, self.config.temperature)] = f"API-{getattr(self.config, 'model_1_api_model', '') or self.config.api_model}"
+            else:
+                future_to_model[executor.submit(self.client.generate_response,
+                                              self.config.model_1, question,
+                                              self.config.max_tokens, self.config.temperature,
+                                              self.config.timeout)] = self.config.model_1
+
+            # 模型2
+            if self.config.api_mode_enabled and self.config.model_2_use_api and self.api_client_model2:
+                future_to_model[executor.submit(self.api_client_model2.generate_response,
+                                              question, self.config.max_tokens, self.config.temperature)] = f"API-{getattr(self.config, 'model_2_api_model', '') or self.config.api_model}"
+            else:
+                future_to_model[executor.submit(self.client.generate_response,
+                                              self.config.model_2, question,
+                                              self.config.max_tokens, self.config.temperature,
+                                              self.config.timeout)] = self.config.model_2
 
             results = []
             for future in concurrent.futures.as_completed(future_to_model):
@@ -1593,8 +1882,23 @@ class AICouncilScheduler:
 请简洁有力地阐述你的核心观点（重点突出3-5个关键论点）：
 """
 
-        result1 = self.client.generate_response(self.config.model_1, prompt1, max_tokens=500, streaming=self.config.streaming_output)
-        result2 = self.client.generate_response(self.config.model_2, prompt2, max_tokens=500, streaming=self.config.streaming_output)
+        # 使用正确的客户端进行提问
+        client1, model_id1, is_api1 = self._get_client_for_model(self.config.model_1)
+        client2, model_id2, is_api2 = self._get_client_for_model(self.config.model_2)
+
+        if is_api1:
+            result1 = client1.generate_response(prompt1, max_tokens=500, temperature=self.config.temperature)
+        else:
+            result1 = client1.generate_response(self.config.model_1, prompt1, max_tokens=500,
+                                              temperature=self.config.temperature, timeout=self.config.timeout,
+                                              streaming=self.config.streaming_output)
+
+        if is_api2:
+            result2 = client2.generate_response(prompt2, max_tokens=500, temperature=self.config.temperature)
+        else:
+            result2 = client2.generate_response(self.config.model_2, prompt2, max_tokens=500,
+                                              temperature=self.config.temperature, timeout=self.config.timeout,
+                                              streaming=self.config.streaming_output)
 
         # 安全处理
         if not result1.get("success"):
@@ -1623,7 +1927,7 @@ class AICouncilScheduler:
             if self.config.enable_early_stop and self.config.ai_consensus_analysis and round_num >= self.config.consensus_check_start_round:
                 print(f"\n🧠 正在分析双方共识度...")
                 consensus_score, analysis, analysis_data = ConsensusDetector.analyze_debate_consensus(
-                    self.client, self.config.coordinator_model, question, debate_round, display_name1, display_name2
+                    self, self.config.coordinator_model, question, debate_round, display_name1, display_name2
                 )
 
                 consensus_percentage = int(consensus_score * 100)
@@ -1659,7 +1963,7 @@ class AICouncilScheduler:
 
                 # 检查是否达到阈值
                 threshold_percentage = int(config.consensus_threshold * 100)
-                consensus_reached = AICouncilScheduler._handle_consensus_feedback(consensus_score, consensus_percentage, threshold_percentage, consensus_reached)
+                consensus_reached = InteractiveInterface._handle_consensus_feedback(consensus_score, consensus_percentage, threshold_percentage, consensus_reached)
                 if consensus_reached:
                     break
 
@@ -1668,7 +1972,7 @@ class AICouncilScheduler:
             DisplayManager.print_separator("-", 40)
 
             # 构建辩论历史上下文
-            debate_history = self._build_debate_context(debate_round, display_name1, display_name2)
+            debate_history = AICouncilScheduler._build_debate_context(debate_round, display_name1, display_name2)
 
             # 模型1回应模型2 - 增强版：看到完整上下文
             if result1.get("success") and result2.get("success"):
@@ -1688,7 +1992,13 @@ class AICouncilScheduler:
 
 请简洁回应（重点突出，不超过300字）：
 """
-                result1 = self.client.generate_response(self.config.model_1, rebuttal_prompt1, max_tokens=600, streaming=self.config.streaming_output)
+                client1, _, is_api1 = self._get_client_for_model(self.config.model_1)
+                if is_api1:
+                    result1 = client1.generate_response(rebuttal_prompt1, max_tokens=600, temperature=self.config.temperature)
+                else:
+                    result1 = client1.generate_response(self.config.model_1, rebuttal_prompt1, max_tokens=600,
+                                                      temperature=self.config.temperature, timeout=self.config.timeout,
+                                                      streaming=self.config.streaming_output)
 
                 if result1.get("success"):
                     response1 = result1.get("response", "")
@@ -1703,7 +2013,7 @@ class AICouncilScheduler:
             # 模型2回应模型1 - 增强版：看到完整上下文
             if result1.get("success") and result2.get("success"):
                 # 更新辩论历史，包含最新的AI1回应
-                debate_history = self._build_debate_context(debate_round, display_name1, display_name2)
+                debate_history = AICouncilScheduler._build_debate_context(debate_round, display_name1, display_name2)
 
                 rebuttal_prompt2 = f"""{role_prompt2}
 
@@ -1721,7 +2031,13 @@ class AICouncilScheduler:
 
 请简洁回应（重点突出，不超过300字）：
 """
-                result2 = self.client.generate_response(self.config.model_2, rebuttal_prompt2, max_tokens=600, streaming=self.config.streaming_output)
+                client2, _, is_api2 = self._get_client_for_model(self.config.model_2)
+                if is_api2:
+                    result2 = client2.generate_response(rebuttal_prompt2, max_tokens=600, temperature=self.config.temperature)
+                else:
+                    result2 = client2.generate_response(self.config.model_2, rebuttal_prompt2, max_tokens=600,
+                                                      temperature=self.config.temperature, timeout=self.config.timeout,
+                                                      streaming=self.config.streaming_output)
 
                 if result2.get("success"):
                     response2 = result2.get("response", "")
@@ -1808,9 +2124,13 @@ class AICouncilScheduler:
         logger.info(f"共识总结调试 - 共识分析长度: {len(consensus_analysis)}")
         logger.info(f"共识总结调试 - 协调模型: {self.config.coordinator_model}")
 
-        summary_result = self.client.generate_response(
-            self.config.coordinator_model, summary_prompt, max_tokens=1000, streaming=False
-        )
+        coord_client, coord_model, is_api = self._get_client_for_model(self.config.coordinator_model)
+        if is_api:
+            summary_result = coord_client.generate_response(summary_prompt, max_tokens=1000, temperature=self.config.temperature)
+        else:
+            summary_result = coord_client.generate_response(coord_model, summary_prompt, max_tokens=1000,
+                                                          temperature=self.config.temperature, timeout=self.config.timeout,
+                                                          streaming=False)
 
         # 详细调试信息
         logger.info(f"共识总结调试 - 请求结果: {summary_result}")
@@ -1861,9 +2181,13 @@ class AICouncilScheduler:
         logger.info(f"协调AI调试 - 摘要长度: {len(debate_summary)}")
         logger.info(f"协调AI调试 - 协调模型: {self.config.coordinator_model}")
 
-        coord_result = self.client.generate_response(
-            self.config.coordinator_model, coord_prompt, max_tokens=800, streaming=False
-        )
+        coord_client, coord_model, is_api = self._get_client_for_model(self.config.coordinator_model)
+        if is_api:
+            coord_result = coord_client.generate_response(coord_prompt, max_tokens=800, temperature=self.config.temperature)
+        else:
+            coord_result = coord_client.generate_response(coord_model, coord_prompt, max_tokens=800,
+                                                        temperature=self.config.temperature, timeout=self.config.timeout,
+                                                        streaming=False)
 
         # 详细调试信息
         logger.info(f"协调AI调试 - 请求结果: {coord_result}")
@@ -1930,7 +2254,13 @@ class AICouncilScheduler:
 {history_text}
 请基于以上信息问下一个问题（只问一个问题）："""
 
-            result = self.client.generate_response(current_model, prompt, max_tokens=200, streaming=self.config.streaming_output)
+            client, model_id, is_api = self._get_client_for_model(current_model)
+            if is_api:
+                result = client.generate_response(prompt, max_tokens=200, temperature=self.config.temperature)
+            else:
+                result = client.generate_response(model_id, prompt, max_tokens=200,
+                                                temperature=self.config.temperature, timeout=self.config.timeout,
+                                                streaming=self.config.streaming_output)
 
             if result.get("success"):
                 question_text = result.get("response", "").strip()
@@ -1976,7 +2306,13 @@ class AICouncilScheduler:
 {"\n".join(history[-6:])}
 请给出你的猜测（如果还不确定可以说'还需要更多信息'）："""
 
-        guess_result = self.client.generate_response(model, guess_prompt, max_tokens=300, streaming=self.config.streaming_output)
+        client, model_id, is_api = self._get_client_for_model(model)
+        if is_api:
+            guess_result = client.generate_response(guess_prompt, max_tokens=300, temperature=self.config.temperature)
+        else:
+            guess_result = client.generate_response(model_id, guess_prompt, max_tokens=300,
+                                                  temperature=self.config.temperature, timeout=self.config.timeout,
+                                                  streaming=self.config.streaming_output)
         if guess_result.get("success"):
             guess = guess_result.get("response", "").strip()
             print(f"\n🤔 {role} 猜测：{guess}")
@@ -2001,9 +2337,13 @@ class AICouncilScheduler:
 {"\n".join(history)}
 请给出最终分析和谜底解释："""
 
-            final_result = self.client.generate_response(
-                self.config.coordinator_model, final_prompt, max_tokens=500, streaming=False
-            )
+            coord_client, coord_model, is_api = self._get_client_for_model(self.config.coordinator_model)
+            if is_api:
+                final_result = coord_client.generate_response(final_prompt, max_tokens=500, temperature=self.config.temperature)
+            else:
+                final_result = coord_client.generate_response(coord_model, final_prompt, max_tokens=500,
+                                                            temperature=self.config.temperature, timeout=self.config.timeout,
+                                                            streaming=False)
             if final_result.get("success"):
                 summary = final_result.get("response", "")
                 print(f"\n📋 最终总结：")
@@ -2020,20 +2360,22 @@ class AICouncilScheduler:
         for result in results:
             DisplayManager.print_result(result, self.config.display_length)
 
-    def _build_debate_context(self, debate_round: List[Dict], display_name1: str, display_name2: str) -> str:
-        """构建辩论历史上下文"""
+    @staticmethod
+    def _build_debate_context(debate_round: List[Dict], display_name1: str, display_name2: str) -> str:
+        """构建辩论历史上下文
+        
+        Args:
+            debate_round: 辩论轮次记录
+            display_name1: 第一个辩论者显示名称（未使用，保留用于未来扩展）
+            display_name2: 第二个辩论者显示名称（未使用，保留用于未来扩展）
+        """
+        _ = (display_name1, display_name2)  # 标记参数已知但未使用（为未来扩展保留）
         context_parts = ["【辩论历史】"]
 
         for entry in debate_round[-4:]:  # 只显示最近4条发言，避免上下文过长
             speaker = entry["speaker"]
             content = entry["content"][:500]  # 限制每个发言的长度
             round_num = entry["round"]
-            entry_type = entry["type"]
-
-            type_label = {
-                "opening": "初始观点",
-                "rebuttal": "反驳"
-            }.get(entry_type, entry_type)
 
             context_parts.append(f"第{round_num}回合 - {speaker}：")
             context_parts.append(f"  {content}")
@@ -2161,6 +2503,7 @@ class InteractiveInterface:
             ("models", "查看可用模型"),
             ("config", "查看当前配置"),
             ("history", "查看历史记录"),
+            ("api", "配置API模式"),
             ("debate", "进入辩论模式"),
             ("turtle", "进入海龟汤模式"),
             ("consensus", "配置共识检测"),
@@ -2199,6 +2542,7 @@ class InteractiveInterface:
             'models': self._show_models,
             'config': self._show_config,
             'history': self._show_history,
+            'api': self._configure_api_mode,
             'debate': self._enter_debate_mode,
             'turtle': self._enter_turtle_soup_mode,
             'consensus': self._configure_consensus,
@@ -2412,6 +2756,146 @@ class InteractiveInterface:
         choice = input("是否退出程序？（y/N）: ").strip().lower()
         if choice == 'y':
             self._exit_program()
+
+    def _configure_api_mode(self):
+        """配置API模式"""
+        DisplayManager.print_header("🔗 API模式配置")
+
+        print(f"当前API模式状态：{'已启用' if config.api_mode_enabled else '未启用'}")
+        print(f"API提供方：{getattr(config, 'api_provider', 'custom')}")
+        print(f"API基础地址：{getattr(config, 'api_base_url', '')}")
+        print(f"API地址：{config.api_url}")
+        print(f"API模型：{config.api_model}")
+        print(f"API密钥：{'已设置' if config.api_key else '未设置'}")
+        print(f"模型1使用API：{'是' if config.model_1_use_api else '否'}")
+        print(f"模型2使用API：{'是' if config.model_2_use_api else '否'}")
+        print(f"协调AI使用API：{'是' if config.coordinator_use_api else '否'}")
+
+        DisplayManager.print_separator()
+
+        # 询问是否启用API模式
+        enable_api = InputValidator.get_yes_no_input("是否启用API模式？", default=config.api_mode_enabled)
+        if enable_api:
+            # 逐个配置：模型1、模型2、协调AI
+            any_use_api = False
+            targets = [
+                ("模型1", "model_1"),
+                ("模型2", "model_2"),
+                ("协调AI", "coordinator"),
+            ]
+
+            for label, key in targets:
+                print("\n" + "-" * 40)
+                print(f"⚙️  配置 {label} 的API参数")
+                use_api_attr = f"{key}_use_api"
+                current_use = getattr(config, use_api_attr, False)
+                use_api = InputValidator.get_yes_no_input(
+                    f"{label} 是否使用外部API？（当前: {'是' if current_use else '否'}）", default=current_use
+                )
+                setattr(config, use_api_attr, use_api)
+
+                if not use_api:
+                    continue
+
+                any_use_api = True
+
+                # 选择提供方
+                provider_attr = f"{key}_api_provider"
+                base_attr = f"{key}_api_base_url"
+                url_attr = f"{key}_api_url"
+                key_attr = f"{key}_api_key"
+                model_attr = f"{key}_api_model"
+
+                current_provider = getattr(config, provider_attr, "") or "custom"
+                print(f"\n🏢 为 {label} 选择API提供方（当前: {current_provider}）：")
+                print("  1. 硅基流动 (SiliconFlow)")
+                print("  2. DeepSeek")
+                print("  3. 火山引擎 (Volcengine Ark)")
+                print("  4. 自定义 (兼容OpenAI格式)")
+                provider_choice = input("输入编号(1-4，回车保持当前/自定义): ").strip() or "4"
+
+                provider_map = {
+                    "1": ("siliconflow", "https://api.siliconflow.cn/v1"),
+                    "2": ("deepseek", "https://api.deepseek.com/v1"),
+                    "3": ("volcengine", "https://ark.cn-beijing.volces.com/api/v3"),
+                    "4": (current_provider or "custom", getattr(config, base_attr, "") or getattr(config, "api_base_url", "https://api.openai.com/v1") or "https://api.openai.com/v1"),
+                }
+                provider, default_base = provider_map.get(provider_choice, provider_map["4"])
+                setattr(config, provider_attr, provider)
+
+                # 配置基础地址
+                current_base = getattr(config, base_attr, "") or default_base
+                print("\n🔧 配置API基础地址：")
+                base_url = input(f"{label} API基础地址 (当前: {current_base}): ").strip()
+                if not base_url:
+                    base_url = current_base
+                base_url = base_url.rstrip("/")
+                setattr(config, base_attr, base_url)
+
+                # chat completions endpoint
+                default_chat_url = f"{base_url}/chat/completions"
+                current_chat = getattr(config, url_attr, "") or default_chat_url
+                api_url = input(f"{label} ChatCompletions地址 (当前: {current_chat}): ").strip()
+                api_url = (api_url or current_chat).rstrip("/")
+                setattr(config, url_attr, api_url)
+
+                # API Key：优先已有单独key，其次全局api_key
+                existing_key = getattr(config, key_attr, "") or config.api_key
+                api_key_input = input(f"{label} API密钥 (当前: {'已设置' if existing_key else '未设置'}，留空保持不变): ").strip()
+                if api_key_input:
+                    setattr(config, key_attr, api_key_input)
+                    existing_key = api_key_input
+
+                # 先尝试拉取该提供方的模型列表
+                models: List[str] = []
+                if existing_key:
+                    temp_client = APIClient(api_url=api_url, api_key=existing_key,
+                                            model_name=getattr(config, model_attr, "") or config.api_model,
+                                            timeout=config.timeout)
+                    models = temp_client.list_models()
+
+                current_model = getattr(config, model_attr, "") or config.api_model
+                if models:
+                    print("\n📦 获取到可用模型：")
+                    for i, mid in enumerate(models, 1):
+                        print(f"  {i}. {mid}")
+                    model_choice = input(f"{label} 选择模型编号(1-{len(models)})，或直接输入模型名(回车保留当前 {current_model}): ").strip()
+                    if model_choice.isdigit():
+                        idx = int(model_choice)
+                        if 1 <= idx <= len(models):
+                            setattr(config, model_attr, models[idx - 1])
+                    elif model_choice:
+                        setattr(config, model_attr, model_choice)
+                else:
+                    print(f"\n⚠️  无法自动获取 {label} 的模型列表（该平台可能不支持 /models，或Key/网络问题）。")
+                    api_model_input = input(f"请输入 {label} 使用的模型名称 (当前: {current_model}): ").strip()
+                    if api_model_input:
+                        setattr(config, model_attr, api_model_input)
+
+            # 若至少有一个AI使用API，则认为API模式开启
+            config.api_mode_enabled = any_use_api
+            if not any_use_api:
+                print("⚠️  所有AI都未配置使用API，将关闭API模式，仅使用本地Ollama。")
+
+            # 保存配置
+            config.save_to_file("macp_config.json")
+            print("✅ API配置已保存")
+
+            # 重新初始化调度器以应用新配置
+            print("\n🔄 正在重新初始化系统...")
+            try:
+                # 重新创建调度器实例
+                new_scheduler = AICouncilScheduler()
+                self.scheduler = new_scheduler
+                print("✅ 系统重新初始化完成")
+            except (AICouncilException, requests.exceptions.RequestException, ValueError) as e:
+                print(f"❌ 重新初始化失败: {e}")
+
+        else:
+            config.api_mode_enabled = False
+            print("✅ 已禁用API模式")
+
+        DisplayManager.print_separator()
 
     def _exit_program(self):
         """退出程序"""
