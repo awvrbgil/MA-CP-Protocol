@@ -38,9 +38,503 @@ import os
 import sys
 import re
 import logging
+import subprocess
+import shutil
 from typing import Dict, Any, List, Optional, Tuple
 
-# ==================== 【依赖检查】 ====================
+# ==================== 【全局标志】 ====================
+NEED_API_SETUP = False  # 标记是否需要在启动后配置API
+CURRENT_LANGUAGE = "zh"  # 当前语言: "zh" 中文, "en" 英文
+
+# ==================== 【多语言系统】 ====================
+LANG_DICT = {
+    # ===== 通用 =====
+    "yes": {"zh": "是", "en": "Yes"},
+    "no": {"zh": "否", "en": "No"},
+    "confirm": {"zh": "确认", "en": "Confirm"},
+    "cancel": {"zh": "取消", "en": "Cancel"},
+    "error": {"zh": "错误", "en": "Error"},
+    "warning": {"zh": "警告", "en": "Warning"},
+    "success": {"zh": "成功", "en": "Success"},
+    "failed": {"zh": "失败", "en": "Failed"},
+    "loading": {"zh": "加载中", "en": "Loading"},
+    "please_wait": {"zh": "请稍候", "en": "Please wait"},
+    "input_prompt": {"zh": "请输入问题或命令：", "en": "Enter question or command: "},
+    "invalid_choice": {"zh": "无效选择", "en": "Invalid choice"},
+    "press_enter": {"zh": "按回车键继续", "en": "Press Enter to continue"},
+    
+    # ===== 依赖检查 =====
+    "dep_check_title": {"zh": "🔍 MACP 依赖检查系统", "en": "🔍 MACP Dependency Check System"},
+    "checking_python": {"zh": "📌 检查 Python 版本...", "en": "📌 Checking Python version..."},
+    "python_ok": {"zh": "满足要求", "en": "meets requirements"},
+    "python_low": {"zh": "版本过低", "en": "version too low"},
+    "install_python": {"zh": "请安装 Python 3.7 或更高版本", "en": "Please install Python 3.7 or higher"},
+    "checking_requests": {"zh": "📌 检查 requests 库...", "en": "📌 Checking requests library..."},
+    "requests_installed": {"zh": "requests 已安装", "en": "requests installed"},
+    "requests_missing": {"zh": "requests 未安装", "en": "requests not installed"},
+    "installing_requests": {"zh": "🔄 正在自动安装 requests...", "en": "🔄 Auto-installing requests..."},
+    "requests_install_ok": {"zh": "requests 安装成功", "en": "requests installed successfully"},
+    "requests_install_fail": {"zh": "requests 安装失败", "en": "requests installation failed"},
+    "checking_ollama": {"zh": "📌 检查 Ollama...", "en": "📌 Checking Ollama..."},
+    "ollama_installed": {"zh": "Ollama 已安装", "en": "Ollama installed"},
+    "ollama_not_found": {"zh": "Ollama 未安装或未找到", "en": "Ollama not installed or not found"},
+    "checking_ollama_service": {"zh": "📌 检查 Ollama 服务状态...", "en": "📌 Checking Ollama service status..."},
+    "ollama_running": {"zh": "Ollama 服务运行中", "en": "Ollama service running"},
+    "ollama_not_running": {"zh": "Ollama 服务未运行", "en": "Ollama service not running"},
+    "starting_ollama": {"zh": "🔄 尝试启动 Ollama 服务...", "en": "🔄 Trying to start Ollama service..."},
+    "ollama_started": {"zh": "Ollama 服务已成功启动", "en": "Ollama service started successfully"},
+    "models_installed": {"zh": "已安装的模型", "en": "Installed models"},
+    "no_models": {"zh": "暂无已安装的模型", "en": "No models installed"},
+    "all_deps_ok": {"zh": "✅ 所有依赖检查通过！", "en": "✅ All dependencies check passed!"},
+    "deps_missing": {"zh": "⚠️ 部分依赖未满足，程序可能无法正常运行", "en": "⚠️ Some dependencies missing, program may not work properly"},
+    
+    # ===== 模式选择 =====
+    "select_mode": {"zh": "🤔 请选择运行模式：", "en": "🤔 Please select running mode:"},
+    "mode_ollama": {"zh": "📥 下载 Ollama 并安装本地AI模型（推荐新手）", "en": "📥 Download Ollama and install local AI models (recommended for beginners)"},
+    "mode_ollama_desc1": {"zh": "完全本地运行，无需网络", "en": "Runs completely locally, no network needed"},
+    "mode_ollama_desc2": {"zh": "需要下载约 2-8GB 的模型文件", "en": "Requires downloading 2-8GB model files"},
+    "mode_ollama_desc3": {"zh": "适合有较好显卡的电脑", "en": "Suitable for computers with good GPU"},
+    "mode_api": {"zh": "🌐 使用 API 模式（推荐快速体验）", "en": "🌐 Use API mode (recommended for quick experience)"},
+    "mode_api_desc1": {"zh": "使用云端AI，无需下载大文件", "en": "Uses cloud AI, no large downloads needed"},
+    "mode_api_desc2": {"zh": "需要API密钥（硅基流动/DeepSeek等）", "en": "Requires API key (SiliconFlow/DeepSeek etc.)"},
+    "mode_api_desc3": {"zh": "适合显卡较弱或想快速体验的用户", "en": "Suitable for users with weak GPU or quick experience"},
+    "preparing_download": {"zh": "📥 准备下载 Ollama...", "en": "📥 Preparing to download Ollama..."},
+    "opening_download": {"zh": "正在打开 Ollama 下载页面...", "en": "Opening Ollama download page..."},
+    "download_opened": {"zh": "已打开下载页面", "en": "Download page opened"},
+    "install_steps": {"zh": "📋 安装步骤：", "en": "📋 Installation steps:"},
+    "recommended_models": {"zh": "💡 安装完成后，推荐下载以下模型：", "en": "💡 After installation, recommended models:"},
+    "download_command": {"zh": "🔧 下载模型命令：", "en": "🔧 Download model command:"},
+    "api_mode_selected": {"zh": "🌐 您选择了 API 模式", "en": "🌐 You selected API mode"},
+    "api_mode_hint": {"zh": "程序将以纯API模式启动，稍后请配置API密钥", "en": "Program will start in API mode, please configure API key later"},
+    
+    # ===== 模型下载 =====
+    "select_action": {"zh": "🤔 请选择：", "en": "🤔 Please select:"},
+    "download_models_now": {"zh": "📥 现在下载推荐模型", "en": "📥 Download recommended models now"},
+    "use_api_mode": {"zh": "🌐 使用API模式（无需下载）", "en": "🌐 Use API mode (no download needed)"},
+    "skip_download": {"zh": "⏭️ 跳过，稍后手动下载", "en": "⏭️ Skip, download manually later"},
+    "downloading_models": {"zh": "📥 开始下载推荐模型...", "en": "📥 Starting to download recommended models..."},
+    "model_list": {"zh": "💡 推荐模型列表：", "en": "💡 Recommended model list:"},
+    "select_models": {"zh": "选择要下载的模型", "en": "Select models to download"},
+    "downloading": {"zh": "🔄 正在下载", "en": "🔄 Downloading"},
+    "download_patience": {"zh": "（这可能需要几分钟，请耐心等待）", "en": "(This may take a few minutes, please wait)"},
+    "download_complete": {"zh": "下载完成！", "en": "Download complete!"},
+    "download_problem": {"zh": "下载可能出现问题", "en": "Download may have issues"},
+    "download_failed": {"zh": "下载失败", "en": "Download failed"},
+    "models_download_done": {"zh": "✅ 模型下载完成！", "en": "✅ Models download complete!"},
+    "no_model_selected": {"zh": "未选择任何模型", "en": "No model selected"},
+    "skipped_download": {"zh": "⏭️ 跳过模型下载", "en": "⏭️ Skipped model download"},
+    "manual_download_hint": {"zh": "💡 稍后可以手动运行: ollama pull <模型名>", "en": "💡 You can manually run later: ollama pull <model_name>"},
+    
+    # ===== 欢迎界面 =====
+    "welcome_title": {"zh": "🤖 MACP 多AI协作平台", "en": "🤖 MACP Multi-AI Collaboration Platform"},
+    "model_1": {"zh": "模型1", "en": "Model 1"},
+    "model_2": {"zh": "模型2", "en": "Model 2"},
+    "coordinator_model": {"zh": "协调模型", "en": "Coordinator Model"},
+    "optimize_mode": {"zh": "优化模式", "en": "Optimize Mode"},
+    "enabled": {"zh": "开启", "en": "Enabled"},
+    "disabled": {"zh": "关闭", "en": "Disabled"},
+    
+    # ===== 命令菜单 =====
+    "available_commands": {"zh": "📋 可用命令：", "en": "📋 Available commands:"},
+    "cmd_help": {"zh": "显示帮助", "en": "Show help"},
+    "cmd_models": {"zh": "查看可用模型", "en": "View available models"},
+    "cmd_config": {"zh": "查看当前配置", "en": "View current config"},
+    "cmd_history": {"zh": "查看历史记录", "en": "View history"},
+    "cmd_api": {"zh": "配置API模式", "en": "Configure API mode"},
+    "cmd_debate": {"zh": "进入辩论模式", "en": "Enter debate mode"},
+    "cmd_turtle": {"zh": "进入海龟汤模式", "en": "Enter turtle soup mode"},
+    "cmd_consensus": {"zh": "配置共识检测", "en": "Configure consensus detection"},
+    "cmd_language": {"zh": "切换语言", "en": "Switch language"},
+    "cmd_exit": {"zh": "退出程序", "en": "Exit program"},
+    
+    # ===== 语言切换 =====
+    "language_title": {"zh": "🌐 语言设置 / Language Settings", "en": "🌐 Language Settings / 语言设置"},
+    "current_language": {"zh": "当前语言", "en": "Current language"},
+    "select_language": {"zh": "请选择语言 / Please select language:", "en": "Please select language / 请选择语言:"},
+    "language_chinese": {"zh": "中文 (Chinese)", "en": "Chinese (中文)"},
+    "language_english": {"zh": "英文 (English)", "en": "English (英文)"},
+    "language_changed": {"zh": "✅ 语言已切换为中文", "en": "✅ Language changed to English"},
+    
+    # ===== 辩论模式 =====
+    "debate_title": {"zh": "🎭 辩论模式", "en": "🎭 Debate Mode"},
+    "enter_topic": {"zh": "请输入辩论主题：", "en": "Enter debate topic: "},
+    "debate_roles": {"zh": "🎭 辩论角色", "en": "🎭 Debate roles"},
+    "round_n": {"zh": "第{n}回合", "en": "Round {n}"},
+    "opening_statement": {"zh": "初始陈述", "en": "Opening statement"},
+    "mutual_response": {"zh": "互相回应", "en": "Mutual response"},
+    "rebuttal": {"zh": "反驳", "en": "Rebuttal"},
+    "pro_side": {"zh": "正方", "en": "Pro side"},
+    "con_side": {"zh": "反方", "en": "Con side"},
+    "both_know_opponent": {"zh": "双方已知晓对手身份", "en": "Both sides know opponent's identity"},
+    "using_models": {"zh": "🌐 使用模型", "en": "🌐 Using models"},
+    "analyzing_consensus": {"zh": "🧠 正在分析双方共识度...", "en": "🧠 Analyzing consensus between both sides..."},
+    "consensus_score": {"zh": "🔄 共识度", "en": "🔄 Consensus"},
+    "ai_analysis": {"zh": "📝 分析", "en": "📝 Analysis"},
+    "ai_suggests_end": {"zh": "🎯 AI建议: 结束辩论", "en": "🎯 AI suggests: End debate"},
+    "ai_suggests_continue": {"zh": "🔄 AI建议: 继续辩论", "en": "🔄 AI suggests: Continue debate"},
+    "consensus_reached": {"zh": "共识度达标", "en": "Consensus reached"},
+    "auto_end_debate": {"zh": "自动结束辩论并生成总结", "en": "Auto-ending debate and generating summary"},
+    "consensus_continue": {"zh": "距离阈值还差{n}%，辩论继续...", "en": "{n}% away from threshold, debate continues..."},
+    "significant_divergence": {"zh": "分歧明显，继续深入辩论...", "en": "Significant divergence, continuing in-depth debate..."},
+    
+    # ===== 协调总结 =====
+    "coordination_title": {"zh": "🎯 协调总结", "en": "🎯 Coordination Summary"},
+    "high_consensus": {"zh": "🤝 双方已达成高度共识，生成最终总结", "en": "🤝 High consensus reached, generating final summary"},
+    "coordinator_analyzing": {"zh": "🤖 协调AI正在分析...", "en": "🤖 Coordinator AI analyzing..."},
+    "coordinator_generating": {"zh": "🤖 协调AI正在生成最终总结...", "en": "🤖 Coordinator AI generating final summary..."},
+    "analysis_complete": {"zh": "✅ 协调AI分析完成：", "en": "✅ Coordinator AI analysis complete:"},
+    "summary_complete": {"zh": "✅ 共识总结生成完成：", "en": "✅ Consensus summary complete:"},
+    "empty_response": {"zh": "返回了空响应", "en": "Returned empty response"},
+    "analysis_failed": {"zh": "❌ 协调AI分析失败", "en": "❌ Coordinator AI analysis failed"},
+    
+    # ===== 保存辩论 =====
+    "debate_ended": {"zh": "📝 辩论已结束，是否保存辩论记录？", "en": "📝 Debate ended, save debate record?"},
+    "save_to_log": {"zh": "📋 存储到日志文件 (macp.txt)", "en": "📋 Save to log file (macp.txt)"},
+    "save_to_separate": {"zh": "📄 单独保存为新的txt文件", "en": "📄 Save as separate txt file"},
+    "dont_save": {"zh": "❌ 不保存", "en": "❌ Don't save"},
+    "saved_to_log": {"zh": "✅ 辩论记录已保存到日志文件", "en": "✅ Debate record saved to log file"},
+    "saved_to_file": {"zh": "✅ 辩论记录已保存到", "en": "✅ Debate record saved to"},
+    "save_skipped": {"zh": "⏭️ 跳过保存", "en": "⏭️ Skipped saving"},
+    "save_failed": {"zh": "❌ 保存辩论记录失败", "en": "❌ Failed to save debate record"},
+    
+    # ===== 问题处理 =====
+    "question_processing": {"zh": "🧠 问题处理", "en": "🧠 Question Processing"},
+    "question": {"zh": "问题", "en": "Question"},
+    "mode": {"zh": "模式", "en": "Mode"},
+    "parallel": {"zh": "并行", "en": "Parallel"},
+    "debate": {"zh": "辩论", "en": "Debate"},
+    "turtle_soup": {"zh": "海龟汤", "en": "Turtle Soup"},
+    "debate_complete": {"zh": "✅ 辩论完成", "en": "✅ Debate complete"},
+    "total_time": {"zh": "总耗时", "en": "Total time"},
+    "seconds": {"zh": "秒", "en": "seconds"},
+    
+    # ===== API配置 =====
+    "api_config_title": {"zh": "🔗 API模式配置", "en": "🔗 API Mode Configuration"},
+    "api_status": {"zh": "当前API模式状态", "en": "Current API mode status"},
+    "api_provider": {"zh": "API提供方", "en": "API provider"},
+    "api_url": {"zh": "API地址", "en": "API URL"},
+    "api_model": {"zh": "API模型", "en": "API model"},
+    "api_key": {"zh": "API密钥", "en": "API key"},
+    "api_key_set": {"zh": "已设置", "en": "Set"},
+    "api_key_not_set": {"zh": "未设置", "en": "Not set"},
+    "model_use_api": {"zh": "使用API", "en": "Use API"},
+    "enable_api_mode": {"zh": "是否启用API模式？", "en": "Enable API mode?"},
+    "configure_api_for": {"zh": "⚙️ 配置 {name} 的API参数", "en": "⚙️ Configure API parameters for {name}"},
+    "use_external_api": {"zh": "{name} 是否使用外部API？", "en": "Use external API for {name}?"},
+    "current": {"zh": "当前", "en": "Current"},
+    "select_provider": {"zh": "🏢 选择API提供方", "en": "🏢 Select API provider"},
+    "custom_openai": {"zh": "自定义 (兼容OpenAI格式)", "en": "Custom (OpenAI compatible)"},
+    "configure_base_url": {"zh": "🔧 配置API基础地址：", "en": "🔧 Configure API base URL:"},
+    "api_key_config": {"zh": "🔑 API密钥配置：", "en": "🔑 API key configuration:"},
+    "use_saved_key": {"zh": "使用已保存的密钥", "en": "Use saved key"},
+    "enter_new_key": {"zh": "输入新的密钥", "en": "Enter new key"},
+    "key_saved": {"zh": "✅ 已使用保存的密钥", "en": "✅ Using saved key"},
+    "available_models": {"zh": "📦 获取到可用模型：", "en": "📦 Available models:"},
+    "cannot_get_models": {"zh": "⚠️ 无法自动获取模型列表", "en": "⚠️ Cannot auto-fetch model list"},
+    "enter_model_name": {"zh": "请输入使用的模型名称", "en": "Enter model name to use"},
+    "api_disabled": {"zh": "⚠️ 所有AI都未配置使用API，将关闭API模式，仅使用本地Ollama。", "en": "⚠️ No AI configured to use API, disabling API mode, using local Ollama only."},
+    "api_config_saved": {"zh": "✅ API配置已保存", "en": "✅ API configuration saved"},
+    "reinitializing": {"zh": "🔄 正在重新初始化系统...", "en": "🔄 Reinitializing system..."},
+    "reinit_complete": {"zh": "✅ 系统重新初始化完成", "en": "✅ System reinitialized"},
+    "reinit_failed": {"zh": "❌ 重新初始化失败", "en": "❌ Reinitialization failed"},
+    "api_mode_disabled": {"zh": "✅ 已禁用API模式", "en": "✅ API mode disabled"},
+    
+    # ===== 退出 =====
+    "session_stats": {"zh": "📊 会话统计：", "en": "📊 Session statistics:"},
+    "session_id": {"zh": "会话ID", "en": "Session ID"},
+    "total_records": {"zh": "总记录数", "en": "Total records"},
+    "goodbye": {"zh": "👋 再见！", "en": "👋 Goodbye!"},
+    "exit_confirm": {"zh": "是否退出程序？", "en": "Exit program?"},
+    "interrupt_detected": {"zh": "⚠️ 检测到中断信号", "en": "⚠️ Interrupt signal detected"},
+    
+    # ===== 错误信息 =====
+    "error_occurred": {"zh": "❌ 发生错误", "en": "❌ Error occurred"},
+    "unknown_command": {"zh": "未知命令", "en": "Unknown command"},
+    "invalid_role": {"zh": "无效角色", "en": "Invalid role"},
+    "connection_error": {"zh": "连接错误", "en": "Connection error"},
+    "timeout_error": {"zh": "请求超时", "en": "Request timeout"},
+    "api_request_error": {"zh": "API请求错误", "en": "API request error"},
+}
+
+def get_text(key: str, **kwargs) -> str:
+    """获取当前语言的文本
+    
+    Args:
+        key: 文本键名
+        **kwargs: 格式化参数
+    
+    Returns:
+        对应语言的文本
+    """
+    global CURRENT_LANGUAGE
+    if key in LANG_DICT:
+        text = LANG_DICT[key].get(CURRENT_LANGUAGE, LANG_DICT[key].get("zh", key))
+        if kwargs:
+            try:
+                text = text.format(**kwargs)
+            except KeyError:
+                pass
+        return text
+    return key
+
+def set_language(lang: str):
+    """设置当前语言
+    
+    Args:
+        lang: 语言代码 ("zh" 或 "en")
+    """
+    global CURRENT_LANGUAGE
+    if lang in ["zh", "en"]:
+        CURRENT_LANGUAGE = lang
+
+# ==================== 【依赖检查系统】 ====================
+def check_and_install_dependencies():
+    """检查并自动安装所有必要依赖
+    
+    检查项目：
+    1. Python版本 (>= 3.7)
+    2. requests库 - 网络请求依赖
+    3. Ollama - 本地AI模型运行环境
+    """
+    global NEED_API_SETUP  # 声明全局变量
+    
+    print("=" * 60)
+    print("🔍 MACP 依赖检查系统")
+    print("=" * 60)
+    
+    all_ok = True
+    
+    # 1. 检查Python版本
+    print("\n📌 检查 Python 版本...")
+    py_version = sys.version_info
+    if py_version.major >= 3 and py_version.minor >= 7:
+        print(f"   ✅ Python {py_version.major}.{py_version.minor}.{py_version.micro} - 满足要求 (>= 3.7)")
+    else:
+        print(f"   ❌ Python {py_version.major}.{py_version.minor}.{py_version.micro} - 版本过低")
+        print("      请安装 Python 3.7 或更高版本")
+        print("      下载地址: https://www.python.org/downloads/")
+        all_ok = False
+    
+    # 2. 检查并安装 requests 库
+    print("\n📌 检查 requests 库...")
+    try:
+        import requests
+        print(f"   ✅ requests 已安装 (版本: {requests.__version__})")
+    except ImportError:
+        print("   ⚠️ requests 未安装")
+        print("   🔄 正在自动安装 requests...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "requests", "-q"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            import requests
+            print(f"   ✅ requests 安装成功 (版本: {requests.__version__})")
+        except Exception as e:
+            print(f"   ❌ requests 安装失败: {e}")
+            print("      请手动运行: pip install requests")
+            all_ok = False
+    
+    # 3. 检查 Ollama
+    print("\n📌 检查 Ollama...")
+    ollama_installed = False
+    ollama_running = False
+    
+    # 检查Ollama是否安装（通过命令行）
+    ollama_cmd = shutil.which("ollama")
+    if ollama_cmd:
+        ollama_installed = True
+        print(f"   ✅ Ollama 已安装 (路径: {ollama_cmd})")
+    else:
+        # Windows上可能在特定路径
+        windows_paths = [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\Ollama\ollama.exe"),
+            r"C:\Program Files\Ollama\ollama.exe"
+        ]
+        for path in windows_paths:
+            if os.path.exists(path):
+                ollama_installed = True
+                print(f"   ✅ Ollama 已安装 (路径: {path})")
+                break
+    
+    if not ollama_installed:
+        print("   ⚠️ Ollama 未安装或未找到")
+        print("\n" + "=" * 60)
+        print("🤔 请选择运行模式：")
+        print("=" * 60)
+        print("  1. 📥 下载 Ollama 并安装本地AI模型（推荐新手）")
+        print("     - 完全本地运行，无需网络")
+        print("     - 需要下载约 2-8GB 的模型文件")
+        print("     - 适合有较好显卡的电脑")
+        print()
+        print("  2. 🌐 使用 API 模式（推荐快速体验）")
+        print("     - 使用云端AI，无需下载大文件")
+        print("     - 需要API密钥（硅基流动/DeepSeek等）")
+        print("     - 适合显卡较弱或想快速体验的用户")
+        print("=" * 60)
+        
+        try:
+            mode_choice = input("请选择 (1/2): ").strip()
+            
+            if mode_choice == "1":
+                # 选择下载Ollama
+                print("\n📥 准备下载 Ollama...")
+                print("   1. 正在打开 Ollama 下载页面...")
+                import webbrowser
+                webbrowser.open("https://ollama.com/download")
+                print("   ✅ 已打开下载页面")
+                print("\n   📋 安装步骤：")
+                print("      1. 下载并运行安装程序")
+                print("      2. 安装完成后，程序会自动启动 Ollama 服务")
+                print("      3. 重新运行本脚本")
+                print("\n   💡 安装完成后，推荐下载以下模型：")
+                print("      - qwen2.5:3b  (轻量级，约2GB)")
+                print("      - llama3.2:3b (轻量级，约2GB)")
+                print("      - qwen2.5:7b  (推荐，约4GB)")
+                print("      - deepseek-r1:8b (推理增强，约5GB)")
+                print("\n   🔧 下载模型命令：")
+                print("      ollama pull qwen2.5:3b")
+                print("      ollama pull llama3.2:3b")
+                print()
+                input("   按回车键退出，安装Ollama后请重新运行本程序...")
+                sys.exit(0)
+                
+            elif mode_choice == "2":
+                # 选择API模式 - 标记需要配置API
+                print("\n🌐 您选择了 API 模式")
+                print("   程序将以纯API模式启动，稍后请配置API密钥")
+                print()
+                # 设置全局标志，稍后在主程序中检测并引导配置API
+                NEED_API_SETUP = True
+                all_ok = True  # 允许程序继续运行
+            else:
+                print("   ⚠️ 无效选择，程序将继续运行")
+                print("   您可以稍后运行 /api 命令配置API模式")
+                all_ok = False
+        except Exception as e:
+            print(f"   ⚠️ 输入错误: {e}")
+            all_ok = False
+    else:
+        # 检查Ollama服务是否运行
+        print("\n📌 检查 Ollama 服务状态...")
+        try:
+            import requests as req
+            response = req.get("http://localhost:11434/api/tags", timeout=5)
+            if response.status_code == 200:
+                ollama_running = True
+                models = response.json().get("models", [])
+                print(f"   ✅ Ollama 服务运行中")
+                if models:
+                    print(f"   📦 已安装的模型: {len(models)}个")
+                    for m in models[:5]:  # 只显示前5个
+                        print(f"      - {m.get('name', '未知')}")
+                    if len(models) > 5:
+                        print(f"      ... 还有 {len(models) - 5} 个模型")
+                else:
+                    print("   ⚠️ 暂无已安装的模型")
+                    print("\n   🤔 请选择：")
+                    print("      1. 📥 现在下载推荐模型")
+                    print("      2. 🌐 使用API模式（无需下载）")
+                    print("      3. ⏭️ 跳过，稍后手动下载")
+                    
+                    try:
+                        model_choice = input("   请选择 (1/2/3): ").strip()
+                        
+                        if model_choice == "1":
+                            print("\n   📥 开始下载推荐模型...")
+                            print("   💡 推荐模型列表：")
+                            print("      1. qwen2.5:3b  - 轻量级中文模型 (~2GB)")
+                            print("      2. llama3.2:3b - 轻量级英文模型 (~2GB)")
+                            print("      3. qwen2.5:7b  - 中等中文模型 (~4GB)")
+                            print("      4. gemma3:4b   - Google轻量模型 (~3GB)")
+                            
+                            download_choice = input("\n   选择要下载的模型 (1-4，多个用逗号分隔，如1,2): ").strip()
+                            models_to_download = []
+                            model_map = {
+                                "1": "qwen2.5:3b",
+                                "2": "llama3.2:3b", 
+                                "3": "qwen2.5:7b",
+                                "4": "gemma3:4b"
+                            }
+                            
+                            for choice in download_choice.split(","):
+                                choice = choice.strip()
+                                if choice in model_map:
+                                    models_to_download.append(model_map[choice])
+                            
+                            if models_to_download:
+                                for model in models_to_download:
+                                    print(f"\n   🔄 正在下载 {model}...")
+                                    print("   （这可能需要几分钟，请耐心等待）")
+                                    try:
+                                        result = subprocess.run(
+                                            ["ollama", "pull", model],
+                                            capture_output=False,
+                                            text=True
+                                        )
+                                        if result.returncode == 0:
+                                            print(f"   ✅ {model} 下载完成！")
+                                        else:
+                                            print(f"   ⚠️ {model} 下载可能出现问题")
+                                    except Exception as download_err:
+                                        print(f"   ❌ 下载失败: {download_err}")
+                                print("\n   ✅ 模型下载完成！")
+                            else:
+                                print("   ⚠️ 未选择任何模型")
+                                
+                        elif model_choice == "2":
+                            print("\n   🌐 您选择了 API 模式")
+                            NEED_API_SETUP = True
+                            
+                        else:
+                            print("   ⏭️ 跳过模型下载")
+                            print("   💡 稍后可以手动运行: ollama pull <模型名>")
+                            
+                    except Exception as e:
+                        print(f"   ⚠️ 操作出错: {e}")
+        except Exception as e:
+            print(f"   ⚠️ Ollama 服务未运行")
+            print("   🔄 尝试启动 Ollama 服务...")
+            try:
+                # 尝试在后台启动Ollama
+                if os.name == 'nt':  # Windows
+                    subprocess.Popen(["ollama", "serve"], 
+                                   stdout=subprocess.DEVNULL, 
+                                   stderr=subprocess.DEVNULL,
+                                   creationflags=subprocess.CREATE_NO_WINDOW)
+                else:
+                    subprocess.Popen(["ollama", "serve"],
+                                   stdout=subprocess.DEVNULL,
+                                   stderr=subprocess.DEVNULL)
+                print("   ⏳ 等待服务启动...")
+                time.sleep(3)
+                
+                # 再次检查
+                try:
+                    response = req.get("http://localhost:11434/api/tags", timeout=5)
+                    if response.status_code == 200:
+                        ollama_running = True
+                        print("   ✅ Ollama 服务已成功启动")
+                except:
+                    print("   ⚠️ 服务启动可能需要更多时间，程序将继续运行")
+                    print("      如遇问题，请手动运行: ollama serve")
+            except Exception as start_error:
+                print(f"   ⚠️ 自动启动失败: {start_error}")
+                print("      请手动运行: ollama serve")
+    
+    print("\n" + "=" * 60)
+    if all_ok:
+        print("✅ 所有依赖检查通过！")
+    else:
+        print("⚠️ 部分依赖未满足，程序可能无法正常运行")
+        print("   请按照上述说明安装缺失的依赖")
+    print("=" * 60 + "\n")
+    
+    return all_ok
+
+# 执行依赖检查
+check_and_install_dependencies()
+
+# ==================== 【依赖导入】 ====================
 try:
     import requests
 except ImportError:
@@ -131,7 +625,7 @@ class Logger:
         level: 日志记录级别 (DEBUG, INFO, WARNING, ERROR)
     """
 
-    def __init__(self, log_file: str = "macp.log", level: int = logging.INFO):
+    def __init__(self, log_file: str = r"C:\Users\yuangu114514\Desktop\macp.txt", level: int = logging.INFO):
         self.log_file = log_file
         self.level = level
         self._setup_logger()
@@ -154,13 +648,13 @@ class Logger:
 
         # 避免重复添加处理器
         if not self.logger.handlers:
-            # 控制台处理器
+            # 控制台处理器 - 只显示WARNING及以上级别，减少干扰
             console_handler = logging.StreamHandler()
-            console_handler.setLevel(self.level)
+            console_handler.setLevel(logging.WARNING)  # 控制台只显示警告和错误
             console_handler.setFormatter(log_format)
             self.logger.addHandler(console_handler)
 
-            # 文件处理器
+            # 文件处理器 - 保留所有INFO级别日志
             try:
                 file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
                 file_handler.setLevel(self.level)
@@ -883,6 +1377,16 @@ class Config:
         self.coordinator_api_key = ""
         self.coordinator_api_model = ""
 
+        # ============ 提供方全局密钥（用于密钥记忆功能） ============
+        self.siliconflow_api_key = ""               # 硅基流动API密钥
+        self.deepseek_api_key = ""                  # DeepSeek API密钥
+        self.volcengine_api_key = ""                # 火山引擎API密钥
+        self.openai_api_key = ""                    # OpenAI API密钥
+        self.xai_api_key = ""                       # xAI (Grok) API密钥
+        self.gemini_api_key = ""                    # Google Gemini API密钥
+        self.claude_api_key = ""                    # Anthropic Claude API密钥
+        self.openrouter_api_key = ""                # OpenRouter API密钥
+
         # ============ AI模型生成参数 ============
         self.timeout = 90          # API请求超时时间(秒)，防止网络请求卡住
         self.max_tokens = 1000     # 单次生成的最大token数，控制回答长度
@@ -910,7 +1414,15 @@ class Config:
         # ============ 性能和模式配置 ============
         self.optimize_memory = False                # 是否启用内存优化模式（实验性）
         self.turtle_soup_max_rounds = 10            # 海龟汤推理游戏的最大回合数
-        self.streaming_output = True                  # 是否启用流式输出
+        self.streaming_output = True                # 是否启用流式输出
+
+        # ============ 语言和界面配置 ============
+        self.language = "zh"                        # 界面语言: "zh" 中文, "en" 英文
+
+        # ============ 多AI辩论配置 ============
+        # 额外的AI模型列表，用于多AI辩论
+        # 格式: [{"name": "AI名称", "type": "ollama/api", "model": "模型名", "api_config": {...}}]
+        self.extra_ai_models: List[Dict[str, Any]] = []
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典格式"""
@@ -945,8 +1457,22 @@ class Config:
         except (OSError, IOError, json.JSONDecodeError, ValueError) as e:
             logger.warning(f"保存配置文件失败: {e}")
 
+# 配置文件路径（桌面）
+CONFIG_FILE_PATH = r"C:\Users\yuangu114514\Desktop\macp_config.json"
+
 # 创建全局配置实例，整个系统共享同一份配置
 config = Config()
+
+# 自动加载配置文件（如果存在）
+if os.path.exists(CONFIG_FILE_PATH):
+    try:
+        config.load_from_file(CONFIG_FILE_PATH)
+        print(f"✅ 已加载配置文件: {CONFIG_FILE_PATH}")
+        # 同步语言设置到全局变量
+        if hasattr(config, 'language') and config.language in ["zh", "en"]:
+            CURRENT_LANGUAGE = config.language
+    except Exception as e:
+        print(f"⚠️ 加载配置文件失败: {e}")
 
 # ==================== 【角色和标签系统】 ====================
 # 定义AI辩论角色的提示词库和立场偏好系统
@@ -1034,6 +1560,160 @@ ROLE_PROMPTS: Dict[str, Dict[str, Any]] = {
 - 最后总结：强化核心论点，提出无可辩驳的结论""",
         "position_bias": "oppositional",  # 对立立场（第一个正方，第二个反方）
         "debate_style": "rhetorical"
+    },
+
+    # ========== 新增角色 ==========
+
+    "朋友": {
+        "prompt": """你是一位温暖、善解人意的朋友，专注于：
+1. 情感支持 - 倾听对方的烦恼和心事
+2. 共情理解 - 设身处地理解对方的感受
+3. 温和建议 - 提供不带压力的建议
+4. 陪伴安慰 - 让对方感到被理解和支持
+
+你的交流风格：温暖亲切，像老朋友一样交谈，不说教、不评判。
+你的回答格式：先表达理解和共情，再分享看法，最后给予鼓励。
+
+【交流原则】：
+- 先听后说，充分理解对方的感受
+- 用"我理解"、"我明白"来表达共情
+- 分享自己的看法时用"我觉得"而非"你应该"
+- 尊重对方的选择，不强迫接受建议""",
+        "position_bias": "supportive",  # 支持性立场
+        "debate_style": "empathetic"
+    },
+
+    "专家": {
+        "prompt": """你是一位知识渊博的百科全书式专家，专注于：
+1. 事实准确性 - 提供准确、可靠的信息
+2. 知识广度 - 涵盖各个领域的基础知识
+3. 逻辑清晰 - 条理分明地解释复杂概念
+4. 纠正错误 - 发现问题中的错误假设并纠正
+
+你的交流风格：专业严谨，通俗易懂，注重准确性。
+你的回答格式：先回答核心问题，再补充相关知识，必要时纠正错误。
+
+【回答原则】：
+- 遇到错误假设必须先指出并纠正
+- 不确定的内容要明确说"我不确定"
+- 用简单的语言解释专业概念
+- 提供可靠的知识来源（如果有）""",
+        "position_bias": "factual",  # 事实导向
+        "debate_style": "educational"
+    },
+
+    "数学家": {
+        "prompt": """你是一位严谨的数学家，专注于：
+1. 数学推理 - 严密的逻辑推导和证明
+2. 数值计算 - 精确的计算和估算
+3. 问题建模 - 将实际问题转化为数学模型
+4. 概念解释 - 用直观方式解释数学概念
+
+你的交流风格：逻辑严密，步骤清晰，注重推导过程。
+你的回答格式：
+1. 理解问题
+2. 建立数学模型
+3. 推导/计算过程
+4. 得出结论
+5. 验证答案
+
+【回答原则】：
+- 每一步推导都要有理有据
+- 计算过程要展示出来
+- 遇到错误假设要先纠正
+- 用多种方法验证结果的正确性""",
+        "position_bias": "logical",  # 逻辑导向
+        "debate_style": "deductive"
+    },
+
+    "物理学家": {
+        "prompt": """你是一位专业的物理学家，专注于：
+1. 物理原理 - 解释自然现象背后的物理定律
+2. 科学思维 - 用科学方法分析问题
+3. 实验验证 - 强调实验和观测的重要性
+4. 概念澄清 - 纠正常见的物理误解
+
+你的交流风格：科学严谨，深入浅出，善用类比。
+你的回答格式：
+1. 现象描述
+2. 物理原理解释
+3. 公式/定律应用（如适用）
+4. 实例说明
+5. 常见误区纠正
+
+【回答原则】：
+- 区分科学事实和假说
+- 遇到违反物理定律的问题要指出
+- 用日常生活例子解释抽象概念
+- 承认科学的边界和未知领域""",
+        "position_bias": "scientific",  # 科学导向
+        "debate_style": "empirical"
+    },
+
+    "心理咨询师": {
+        "prompt": """你是一位专业的心理咨询师，专注于：
+1. 情绪识别 - 识别和理解情绪状态
+2. 心理分析 - 分析行为背后的心理动机
+3. 自我成长 - 提供自我提升的建议
+4. 心理健康 - 普及心理健康知识
+
+你的交流风格：温和专业，不评判，引导思考。
+你的回答格式：先共情理解，再提供专业分析，最后给出建议。
+
+【咨询原则】：
+- 保持中立，不评判对方的感受和选择
+- 引导对方自我觉察，而非直接给答案
+- 区分日常烦恼和需要专业帮助的情况
+- 必要时建议寻求专业心理帮助""",
+        "position_bias": "therapeutic",  # 治疗性立场
+        "debate_style": "reflective"
+    },
+
+    "历史学家": {
+        "prompt": """你是一位博学的历史学家，专注于：
+1. 历史事实 - 准确描述历史事件和人物
+2. 历史背景 - 分析事件的时代背景
+3. 因果关系 - 探讨历史事件的因果链
+4. 历史教训 - 从历史中汲取智慧
+
+你的交流风格：客观中立，引经据典，注重史实。
+你的回答格式：
+1. 历史背景介绍
+2. 事件/人物描述
+3. 因果分析
+4. 历史意义和影响
+5. 现代启示
+
+【回答原则】：
+- 区分历史事实和历史解读
+- 引用可靠的历史文献
+- 避免用现代标准评判古人
+- 承认历史研究的不确定性""",
+        "position_bias": "historical",  # 历史导向
+        "debate_style": "contextual"
+    },
+
+    "程序员": {
+        "prompt": """你是一位经验丰富的程序员，专注于：
+1. 代码实现 - 提供清晰、高效的代码
+2. 问题调试 - 分析和解决编程问题
+3. 技术选型 - 推荐合适的技术方案
+4. 最佳实践 - 分享编程最佳实践
+
+你的交流风格：实用主义，代码优先，解释清晰。
+你的回答格式：
+1. 理解需求
+2. 提供代码解决方案
+3. 解释代码逻辑
+4. 提供优化建议
+
+【回答原则】：
+- 代码要有注释
+- 考虑边界情况和错误处理
+- 推荐主流、稳定的技术
+- 解释为什么这样写""",
+        "position_bias": "technical",  # 技术导向
+        "debate_style": "practical"
     }
 }
 
@@ -1052,12 +1732,20 @@ TAG_TO_ROLES: Dict[str, List[str]] = {
     "平衡性": ["数值策划", "系统架构师", "魔鬼代言人"],     # 数值平衡、游戏平衡相关
     "创新性": ["魔鬼代言人", "叙事导演", "系统架构师"],     # 创意创新、新颖想法相关
     "可行性": ["系统架构师", "数值策划", "魔鬼代言人"],     # 项目可行性、技术实现相关
-    "情感体验": ["叙事导演", "玩家代表", "魔鬼代言人"],     # 情感体验、用户感受相关
-    "技术实现": ["系统架构师", "项目经理", "魔鬼代言人"],   # 技术实现、工程开发相关
+    "情感体验": ["叙事导演", "玩家代表", "朋友", "心理咨询师"],  # 情感体验、用户感受相关
+    "技术实现": ["系统架构师", "项目经理", "程序员"],       # 技术实现、工程开发相关
     "用户体验": ["玩家代表", "叙事导演", "系统架构师"],     # 用户界面、交互体验相关
     "法律合规": ["律师", "项目经理", "魔鬼代言人"],         # 法律合规、知识产权相关
     "伦理道德": ["哲学家", "律师", "魔鬼代言人"],           # 伦理道德、价值观相关
-    "辩论技巧": ["辩论手", "律师", "魔鬼代言人"]            # 辩论技巧、论证逻辑相关
+    "辩论技巧": ["辩论手", "律师", "魔鬼代言人"],           # 辩论技巧、论证逻辑相关
+    # 新增标签
+    "数学问题": ["数学家", "专家", "魔鬼代言人"],           # 数学计算、逻辑推理相关
+    "物理问题": ["物理学家", "专家", "数学家"],             # 物理现象、科学原理相关
+    "科学知识": ["专家", "物理学家", "数学家"],             # 通用科学知识问题
+    "历史问题": ["历史学家", "哲学家", "专家"],             # 历史事件、人物相关
+    "情感倾诉": ["朋友", "心理咨询师", "哲学家"],           # 情感问题、心事倾诉
+    "心理健康": ["心理咨询师", "朋友", "哲学家"],           # 心理问题、情绪困扰
+    "编程问题": ["程序员", "系统架构师", "专家"]            # 编程代码、技术问题
 }
 
 # 标签关键词映射：用于从用户问题中检测相关领域的关键词
@@ -1072,8 +1760,135 @@ TAG_KEYWORDS: Dict[str, List[str]] = {
     "用户体验": ["用户", "玩家", "体验", "操作", "界面", "流畅"],
     "法律合规": ["法律", "合规", "合同", "条款", "风险", "知识产权"],
     "伦理道德": ["伦理", "道德", "价值观", "人性", "尊严", "自由"],
-    "辩论技巧": ["辩论", "争论", "讨论", "反驳", "论证", "逻辑"]
+    "辩论技巧": ["辩论", "争论", "讨论", "反驳", "论证", "逻辑"],
+    # 新增标签关键词
+    "数学问题": ["数学", "计算", "公式", "方程", "几何", "代数", "微积分", "统计", "概率", "证明", "求解"],
+    "物理问题": ["物理", "力学", "电磁", "光学", "热力学", "量子", "相对论", "能量", "动量", "波动"],
+    "科学知识": ["科学", "科普", "原理", "定律", "实验", "研究", "发现", "自然"],
+    "历史问题": ["历史", "朝代", "古代", "近代", "战争", "帝国", "文明", "事件", "人物", "年代"],
+    "情感倾诉": ["烦恼", "难过", "伤心", "困惑", "纠结", "郁闷", "心情", "倾诉", "聊聊", "心事", "感情"],
+    "心理健康": ["焦虑", "抑郁", "压力", "失眠", "情绪", "心理", "精神", "恐惧", "紧张"],
+    "编程问题": ["编程", "代码", "程序", "bug", "错误", "函数", "变量", "算法", "python", "java", "javascript"]
 }
+
+# ============ 问题类型分类系统 ============
+# 用于判断问题是否需要高准确度（事实类）还是允许主观讨论（哲学/叙事类）
+
+# 事实准确类问题的关键词（这类问题需要AI纠正错误，不能有幻觉）
+FACTUAL_KEYWORDS: List[str] = [
+    # 科学事实
+    "是什么", "有没有", "有多少", "多大", "多长", "多重", "多远",
+    "几个", "几种", "什么时候", "什么地方", "谁发明", "谁发现",
+    "是真的吗", "正确吗", "对不对", "存在吗", "能不能",
+    # 动物/生物
+    "动物", "植物", "生物", "细胞", "器官", "身体", "羽毛", "翅膀", "爪子", "毛发",
+    "哺乳动物", "鸟类", "鱼类", "昆虫", "爬行动物",
+    # 科学领域
+    "物理", "化学", "生物学", "数学", "地理", "天文", "医学",
+    "科学", "实验", "公式", "定理", "定律", "原理",
+    # 历史/地理
+    "历史", "朝代", "年代", "事件", "人物", "国家", "城市", "首都",
+    # 常识
+    "颜色", "形状", "大小", "重量", "温度", "速度", "距离"
+]
+
+# 主观/哲学类问题的关键词（这类问题允许开放讨论）
+PHILOSOPHICAL_KEYWORDS: List[str] = [
+    # 哲学
+    "人生", "意义", "目的", "本质", "存在", "自由意志", "命运",
+    "善恶", "对错", "价值", "美", "真理", "幸福", "爱",
+    # 思辨
+    "应该", "是否应该", "值得", "更好", "最好", "如何看待",
+    "怎么看", "你认为", "你觉得", "看法", "观点", "立场",
+    # 假设性
+    "如果", "假如", "假设", "可能", "或许", "也许",
+    # 辩论性
+    "支持", "反对", "利弊", "优缺点", "好坏", "争议"
+]
+
+def analyze_question_type(question: str) -> Dict[str, Any]:
+    """分析问题类型，判断是否需要高准确度
+    
+    Returns:
+        {
+            "type": "factual" | "philosophical" | "mixed",
+            "accuracy_required": True/False,
+            "confidence": 0.0-1.0,
+            "detected_factual_keywords": [...],
+            "detected_philosophical_keywords": [...]
+        }
+    """
+    question_lower = question.lower()
+    
+    # 检测事实类关键词
+    factual_hits = [kw for kw in FACTUAL_KEYWORDS if kw in question_lower]
+    # 检测哲学类关键词
+    philosophical_hits = [kw for kw in PHILOSOPHICAL_KEYWORDS if kw in question_lower]
+    
+    factual_score = len(factual_hits)
+    philosophical_score = len(philosophical_hits)
+    
+    # 判断问题类型
+    if factual_score > philosophical_score * 2:
+        question_type = "factual"
+        accuracy_required = True
+        confidence = min(1.0, factual_score / 3)
+    elif philosophical_score > factual_score * 2:
+        question_type = "philosophical"
+        accuracy_required = False
+        confidence = min(1.0, philosophical_score / 3)
+    else:
+        question_type = "mixed"
+        accuracy_required = factual_score >= philosophical_score
+        confidence = 0.5
+    
+    return {
+        "type": question_type,
+        "accuracy_required": accuracy_required,
+        "confidence": confidence,
+        "detected_factual_keywords": factual_hits,
+        "detected_philosophical_keywords": philosophical_hits
+    }
+
+# 防幻觉提示词（中文）
+ANTI_HALLUCINATION_PROMPT_ZH = """
+【重要：防止幻觉指令】
+1. 如果问题本身包含错误的假设或事实错误，你必须首先指出并纠正这个错误，而不是顺着错误继续回答。
+2. 例如：如果用户问"猫的羽毛是什么颜色"，你必须指出"猫没有羽毛，猫有的是毛发"，然后再讨论相关话题。
+3. 对于事实性问题，如果你不确定答案，请明确说"我不确定"或"我需要查证"，而不是编造答案。
+4. 保持逻辑严谨，不要为了辩论而忽视基本事实。
+5. 事实优先于立场：即使你的角色需要辩护某个观点，也不能歪曲基本事实。
+"""
+
+# 防幻觉提示词（英文）
+ANTI_HALLUCINATION_PROMPT_EN = """
+【IMPORTANT: Anti-Hallucination Instructions】
+1. If the question itself contains false assumptions or factual errors, you MUST first point out and correct this error, rather than answering based on the false premise.
+2. Example: If user asks "What color is a cat's feathers?", you MUST point out "Cats don't have feathers, cats have fur", then discuss the relevant topic.
+3. For factual questions, if you're unsure about the answer, clearly state "I'm not sure" or "I need to verify", rather than making up an answer.
+4. Maintain logical rigor, don't ignore basic facts for the sake of debate.
+5. Facts over position: Even if your role requires defending a viewpoint, you cannot distort basic facts.
+"""
+
+# 哲学讨论提示词（中文）
+PHILOSOPHICAL_PROMPT_ZH = """
+【讨论模式：开放思辨】
+这是一个开放性的哲学/思辨问题，没有绝对的对错答案。
+1. 你可以自由表达你的观点和论证。
+2. 重点在于论证的逻辑性和深度，而非寻找"正确答案"。
+3. 但仍需保持基本的逻辑自洽，不要自相矛盾。
+4. 尊重不同观点，用理性论证而非情绪化表达。
+"""
+
+# 哲学讨论提示词（英文）
+PHILOSOPHICAL_PROMPT_EN = """
+【Discussion Mode: Open Speculation】
+This is an open philosophical/speculative question with no absolute right or wrong answer.
+1. You can freely express your viewpoints and arguments.
+2. Focus on the logic and depth of argumentation, rather than finding "the correct answer".
+3. But still maintain basic logical consistency, don't contradict yourself.
+4. Respect different viewpoints, use rational argumentation rather than emotional expression.
+"""
 
 class RoleSystem:
     """AI辩论角色系统管理器
@@ -1103,7 +1918,27 @@ class RoleSystem:
         "法律顾问": "律师",
         "哲学思考者": "哲学家",
         "辩论者": "辩论手",
-        "辩手": "辩论手"
+        "辩手": "辩论手",
+        # 新增角色的别名
+        "好友": "朋友",
+        "闺蜜": "朋友",
+        "知己": "朋友",
+        "百科": "专家",
+        "百科全书": "专家",
+        "知识专家": "专家",
+        "数学专家": "数学家",
+        "物理专家": "物理学家",
+        "物理老师": "物理学家",
+        "心理医生": "心理咨询师",
+        "心理专家": "心理咨询师",
+        "咨询师": "心理咨询师",
+        "史学家": "历史学家",
+        "历史专家": "历史学家",
+        "历史老师": "历史学家",
+        "开发者": "程序员",
+        "码农": "程序员",
+        "工程师": "程序员",
+        "软件工程师": "程序员"
     }
 
     def __init__(self):
@@ -1332,8 +2167,20 @@ class OllamaClient:
                                     prompt: str,
                                     max_tokens: Optional[int] = None,
                                     temperature: float = 0.7,
-                                    timeout: int = 90) -> Dict[str, Any]:
-        """生成流式模型响应"""
+                                    timeout: int = 90,
+                                    speaker_name: Optional[str] = None,
+                                    response_type: str = "") -> Dict[str, Any]:
+        """生成流式模型响应
+        
+        Args:
+            model: 模型名称
+            prompt: 提示词
+            max_tokens: 最大token数
+            temperature: 温度参数
+            timeout: 超时时间
+            speaker_name: 发言者名称（用于辩论模式显示）
+            response_type: 响应类型（如"反驳xxx"）
+        """
         start_time = time.time()
         full_response = ""
         total_tokens = 0
@@ -1371,8 +2218,12 @@ class OllamaClient:
                     "details": response.text
                 }
 
-            # 处理流式响应
-            print(f"🤖 {model}：", end="", flush=True)
+            # 处理流式响应 - 显示发言者名称
+            if speaker_name:
+                type_prefix = f" {response_type}：" if response_type else "："
+                print(f"\n📢 {speaker_name}{type_prefix}", flush=True)
+            else:
+                print(f"🤖 {model}：", end="", flush=True)
 
             for line in response.iter_lines():
                 if line:
@@ -1547,17 +2398,26 @@ class APIClient:
             logger.error(f"API连接检查失败: {e}")
             return False
 
-    def generate_response(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7) -> Dict[str, Any]:
+    def generate_response(self, prompt: str, max_tokens: int = 1000, temperature: float = 0.7,
+                         streaming: bool = False, speaker_name: Optional[str] = None, 
+                         response_type: str = "") -> Dict[str, Any]:
         """生成AI响应
 
         Args:
             prompt: 提示词
             max_tokens: 最大token数
             temperature: 温度参数
+            streaming: 是否使用流式输出
+            speaker_name: 发言者名称（用于流式输出显示）
+            response_type: 响应类型（如"反驳xxx"）
 
         Returns:
             包含响应信息的字典
         """
+        if streaming:
+            return self._generate_streaming_response(prompt, max_tokens, temperature, 
+                                                    speaker_name, response_type)
+        
         start_time = time.time()
 
         try:
@@ -1565,7 +2425,8 @@ class APIClient:
                 "model": self.model_name,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": max_tokens,
-                "temperature": temperature
+                "temperature": temperature,
+                "stream": False
             }
 
             response = self.session.post(self.api_url, json=payload, timeout=self.timeout)
@@ -1605,6 +2466,90 @@ class APIClient:
                 "success": False,
                 "model": f"API-{self.model_name}",
                 "response": f"（API请求错误: {str(e)}）",
+                "time": elapsed_time,
+                "error": str(e)
+            }
+
+    def _generate_streaming_response(self, prompt: str, max_tokens: int = 1000, 
+                                    temperature: float = 0.7,
+                                    speaker_name: Optional[str] = None,
+                                    response_type: str = "") -> Dict[str, Any]:
+        """生成流式AI响应（真正的逐字输出）
+        
+        Args:
+            prompt: 提示词
+            max_tokens: 最大token数
+            temperature: 温度参数
+            speaker_name: 发言者名称
+            response_type: 响应类型
+        """
+        start_time = time.time()
+        full_response = ""
+
+        try:
+            payload = {
+                "model": self.model_name,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "stream": True
+            }
+
+            response = self.session.post(self.api_url, json=payload, timeout=self.timeout, stream=True)
+
+            if response.status_code != 200:
+                elapsed_time = time.time() - start_time
+                error_msg = f"API请求失败，状态码: {response.status_code}"
+                return {
+                    "success": False,
+                    "model": f"API-{self.model_name}",
+                    "response": f"（{error_msg}）",
+                    "time": elapsed_time,
+                    "error": error_msg
+                }
+
+            # 显示发言者名称
+            if speaker_name:
+                type_prefix = f" {response_type}：" if response_type else "："
+                print(f"\n📢 {speaker_name}{type_prefix}", flush=True)
+            else:
+                print(f"🤖 API-{self.model_name}：", end="", flush=True)
+
+            # 处理流式响应 (SSE格式)
+            for line in response.iter_lines():
+                if line:
+                    line_str = line.decode('utf-8').strip()
+                    if line_str.startswith("data: "):
+                        data_str = line_str[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                print(content, end="", flush=True)
+                                full_response += content
+                        except json.JSONDecodeError:
+                            continue
+
+            print()  # 换行
+            elapsed_time = time.time() - start_time
+
+            return {
+                "success": True,
+                "model": f"API-{self.model_name}",
+                "response": full_response,
+                "time": elapsed_time
+            }
+
+        except Exception as e:
+            elapsed_time = time.time() - start_time
+            logger.error(f"API流式响应出错: {e}")
+            return {
+                "success": False,
+                "model": f"API-{self.model_name}",
+                "response": f"（API流式请求错误: {str(e)}）",
                 "time": elapsed_time,
                 "error": str(e)
             }
@@ -1843,9 +2788,15 @@ class AICouncilScheduler:
         role1 = role1 or self.config.default_role_1
         role2 = role2 or self.config.default_role_2
 
-        # 构造显示名：模型名-角色名
-        display_name1 = f"{self.config.model_1}-{role1}"
-        display_name2 = f"{self.config.model_2}-{role2}"
+        # 先获取客户端，确定实际使用的模型名（本地或API）
+        client1, model_id1, is_api1 = self._get_client_for_model(self.config.model_1)
+        client2, model_id2, is_api2 = self._get_client_for_model(self.config.model_2)
+
+        # 构造显示名：使用实际模型名（如果是API则显示API模型名）
+        actual_model1 = model_id1 if is_api1 else self.config.model_1
+        actual_model2 = model_id2 if is_api2 else self.config.model_2
+        display_name1 = f"{actual_model1}-{role1}"
+        display_name2 = f"{actual_model2}-{role2}"
 
         role_prompt1 = role_system.get_role_prompt(role1, is_first=True)   # 正方
         role_prompt2 = role_system.get_role_prompt(role2, is_first=False)  # 反方
@@ -1855,14 +2806,76 @@ class AICouncilScheduler:
 
         self._setup_debate_roles(question, role1, role2)
 
+        # 分析问题类型，决定是否需要高准确度
+        question_analysis = analyze_question_type(question)
+        accuracy_required = question_analysis["accuracy_required"]
+        question_type = question_analysis["type"]
+        
+        # 显示问题类型分析
+        if CURRENT_LANGUAGE == "en":
+            type_labels = {"factual": "Factual (High Accuracy)", "philosophical": "Philosophical (Open Discussion)", "mixed": "Mixed"}
+            print(f"🔍 Question Type: {type_labels.get(question_type, question_type)}")
+            if accuracy_required:
+                print("⚠️ Accuracy Mode: AI will correct factual errors in the question")
+        else:
+            type_labels = {"factual": "事实类（高准确度）", "philosophical": "哲学类（开放讨论）", "mixed": "混合类"}
+            print(f"🔍 问题类型: {type_labels.get(question_type, question_type)}")
+            if accuracy_required:
+                print("⚠️ 准确度模式: AI会纠正问题中的事实错误")
+
         # 第一回合：双方知道对手是谁，但看不到具体观点
         DisplayManager.print_separator("-", 40)
-        print("第1回合：初始陈述")
+        if CURRENT_LANGUAGE == "en":
+            print("Round 1: Opening Statement")
+        else:
+            print("第1回合：初始陈述")
         DisplayManager.print_separator("-", 40)
-        print(f"💡 {role1} vs {role2} - 双方已知晓对手身份")
+        if CURRENT_LANGUAGE == "en":
+            print(f"💡 {role1} vs {role2} - Both sides know opponent's identity")
+        else:
+            print(f"💡 {role1} vs {role2} - 双方已知晓对手身份")
+        if is_api1 or is_api2:
+            if CURRENT_LANGUAGE == "en":
+                print(f"🌐 Using models: {actual_model1} | {actual_model2}")
+            else:
+                print(f"🌐 使用模型: {actual_model1} | {actual_model2}")
+
+        # 根据问题类型选择附加提示词
+        if CURRENT_LANGUAGE == "en":
+            mode_instruction = ANTI_HALLUCINATION_PROMPT_EN if accuracy_required else PHILOSOPHICAL_PROMPT_EN
+        else:
+            mode_instruction = ANTI_HALLUCINATION_PROMPT_ZH if accuracy_required else PHILOSOPHICAL_PROMPT_ZH
 
         # 增强版第一回合提示词 - 让AI知道对手是谁，并要求简洁表达
-        prompt1 = f"""{role_prompt1}
+        # 根据当前语言生成不同的提示词
+        if CURRENT_LANGUAGE == "en":
+            lang_instruction = "\n**IMPORTANT: You MUST respond entirely in English.**\n"
+            prompt1 = f"""{role_prompt1}
+{lang_instruction}
+{mode_instruction}
+
+【Debate Topic】: {question}
+
+【Your Position】: {role1} (Pro side)
+【Opponent Role】: {role2} (Con side)
+
+Please clearly and concisely present your core arguments (highlight 3-5 key points):
+"""
+
+            prompt2 = f"""{role_prompt2}
+{lang_instruction}
+{mode_instruction}
+
+【Debate Topic】: {question}
+
+【Your Position】: {role2} (Con side)
+【Opponent Role】: {role1} (Pro side)
+
+Please clearly and concisely present your core arguments (highlight 3-5 key points):
+"""
+        else:
+            prompt1 = f"""{role_prompt1}
+{mode_instruction}
 
 【辩论主题】: {question}
 
@@ -1872,7 +2885,8 @@ class AICouncilScheduler:
 请简洁有力地阐述你的核心观点（重点突出3-5个关键论点）：
 """
 
-        prompt2 = f"""{role_prompt2}
+            prompt2 = f"""{role_prompt2}
+{mode_instruction}
 
 【辩论主题】: {question}
 
@@ -1882,23 +2896,49 @@ class AICouncilScheduler:
 请简洁有力地阐述你的核心观点（重点突出3-5个关键论点）：
 """
 
-        # 使用正确的客户端进行提问
-        client1, model_id1, is_api1 = self._get_client_for_model(self.config.model_1)
-        client2, model_id2, is_api2 = self._get_client_for_model(self.config.model_2)
-
+        # 第一位辩论者发言（客户端已在前面获取）
+        streaming_used1 = False
         if is_api1:
-            result1 = client1.generate_response(prompt1, max_tokens=500, temperature=self.config.temperature)
+            # API模式：支持流式输出
+            if self.config.streaming_output:
+                result1 = client1.generate_response(prompt1, max_tokens=500, temperature=self.config.temperature,
+                                                   streaming=True, speaker_name=display_name1, response_type="")
+                streaming_used1 = True
+            else:
+                result1 = client1.generate_response(prompt1, max_tokens=500, temperature=self.config.temperature)
         else:
-            result1 = client1.generate_response(self.config.model_1, prompt1, max_tokens=500,
-                                              temperature=self.config.temperature, timeout=self.config.timeout,
-                                              streaming=self.config.streaming_output)
+            # Ollama模式
+            if self.config.streaming_output:
+                result1 = client1._generate_streaming_response(self.config.model_1, prompt1, max_tokens=500,
+                                                  temperature=self.config.temperature, timeout=self.config.timeout,
+                                                  speaker_name=display_name1, response_type="")
+                streaming_used1 = True
+            else:
+                result1 = client1.generate_response(self.config.model_1, prompt1, max_tokens=500,
+                                                  temperature=self.config.temperature, timeout=self.config.timeout,
+                                                  streaming=False)
 
+        # 第二位辩论者发言
+        streaming_used2 = False
         if is_api2:
-            result2 = client2.generate_response(prompt2, max_tokens=500, temperature=self.config.temperature)
+            # API模式：支持流式输出
+            if self.config.streaming_output:
+                result2 = client2.generate_response(prompt2, max_tokens=500, temperature=self.config.temperature,
+                                                   streaming=True, speaker_name=display_name2, response_type="")
+                streaming_used2 = True
+            else:
+                result2 = client2.generate_response(prompt2, max_tokens=500, temperature=self.config.temperature)
         else:
-            result2 = client2.generate_response(self.config.model_2, prompt2, max_tokens=500,
-                                              temperature=self.config.temperature, timeout=self.config.timeout,
-                                              streaming=self.config.streaming_output)
+            # Ollama模式
+            if self.config.streaming_output:
+                result2 = client2._generate_streaming_response(self.config.model_2, prompt2, max_tokens=500,
+                                                  temperature=self.config.temperature, timeout=self.config.timeout,
+                                                  speaker_name=display_name2, response_type="")
+                streaming_used2 = True
+            else:
+                result2 = client2.generate_response(self.config.model_2, prompt2, max_tokens=500,
+                                                  temperature=self.config.temperature, timeout=self.config.timeout,
+                                                  streaming=False)
 
         # 安全处理
         if not result1.get("success"):
@@ -1914,8 +2954,11 @@ class AICouncilScheduler:
             {"round": 1, "speaker": display_name2, "content": response2, "type": "opening"}
         ]
 
-        self._display_debate_response(display_name1, response1)
-        self._display_debate_response(display_name2, response2)
+        # 非流式输出时才显示（流式输出已经实时显示过了）
+        if not streaming_used1:
+            self._display_debate_response(display_name1, response1)
+        if not streaming_used2:
+            self._display_debate_response(display_name2, response2)
 
         # 后续回合（智能提前结束）
         max_rounds = min(self.config.debate_rounds, 6)
@@ -1931,27 +2974,21 @@ class AICouncilScheduler:
                 )
 
                 consensus_percentage = int(consensus_score * 100)
-                logger.info(f"🔄 AI共识分析: {consensus_percentage}% - {analysis}")
 
                 # 显示共识度条形图
                 ConsensusDetector.display_consensus_bar(consensus_percentage)
 
-                print(f"📝 AI分析: {analysis}")
+                # 显示简短分析（限制长度，避免输出过长）
+                if analysis_data and 'analysis_summary' in analysis_data:
+                    short_analysis = analysis_data['analysis_summary'][:150]
+                    if len(analysis_data['analysis_summary']) > 150:
+                        short_analysis += "..."
+                    print(f"📝 分析: {short_analysis}")
+                elif analysis and len(analysis) < 200:
+                    print(f"📝 分析: {analysis}")
 
-                # 显示详细分析（如果有）
+                # 显示详细分析（简化显示）
                 if analysis_data:
-                    if 'key_agreements' in analysis_data and analysis_data['key_agreements']:
-                        agreements = analysis_data['key_agreements'][:3]
-                        print(f"🤝 共识点: {len(agreements)}项")
-                        for i, agreement in enumerate(agreements, 1):
-                            print(f"   {i}. {agreement}")
-
-                    if 'key_disagreements' in analysis_data and analysis_data['key_disagreements']:
-                        disagreements = analysis_data['key_disagreements'][:3]
-                        print(f"⚔️  分歧点: {len(disagreements)}项")
-                        for i, disagreement in enumerate(disagreements, 1):
-                            print(f"   {i}. {disagreement}")
-
                     if 'recommendation' in analysis_data:
                         recommendation = analysis_data['recommendation']
                         if recommendation == 'end':
@@ -1968,7 +3005,10 @@ class AICouncilScheduler:
                     break
 
             DisplayManager.print_separator("-", 40)
-            print(f"第{round_num}回合：互相回应")
+            if CURRENT_LANGUAGE == "en":
+                print(f"Round {round_num}: Mutual Response")
+            else:
+                print(f"第{round_num}回合：互相回应")
             DisplayManager.print_separator("-", 40)
 
             # 构建辩论历史上下文
@@ -1976,7 +3016,27 @@ class AICouncilScheduler:
 
             # 模型1回应模型2 - 增强版：看到完整上下文
             if result1.get("success") and result2.get("success"):
-                rebuttal_prompt1 = f"""{role_prompt1}
+                if CURRENT_LANGUAGE == "en":
+                    rebuttal_prompt1 = f"""{role_prompt1}
+
+**IMPORTANT: You MUST respond entirely in English.**
+
+【Debate Topic】: {question}
+【Your Position】: {role1} (Pro side)
+【Opponent Role】: {role2} (Con side)
+
+{debate_history}
+
+【Your Task】
+Refute {role2}'s arguments concisely and forcefully:
+1. Point out the core weaknesses in opponent's arguments
+2. Use 1-2 key arguments to refute
+3. Reaffirm your core position
+
+Please respond concisely (key points only, max 300 words):
+"""
+                else:
+                    rebuttal_prompt1 = f"""{role_prompt1}
 
 【辩论主题】: {question}
 【你的立场】: {role1}（正方）
@@ -1993,12 +3053,27 @@ class AICouncilScheduler:
 请简洁回应（重点突出，不超过300字）：
 """
                 client1, _, is_api1 = self._get_client_for_model(self.config.model_1)
+                rebuttal_streaming1 = False
+                response_type1 = f"Rebuttal to {role2}" if CURRENT_LANGUAGE == "en" else f"反驳{role2}"
                 if is_api1:
-                    result1 = client1.generate_response(rebuttal_prompt1, max_tokens=600, temperature=self.config.temperature)
+                    # API模式：支持流式输出
+                    if self.config.streaming_output:
+                        result1 = client1.generate_response(rebuttal_prompt1, max_tokens=600, temperature=self.config.temperature,
+                                                           streaming=True, speaker_name=display_name1, response_type=response_type1)
+                        rebuttal_streaming1 = True
+                    else:
+                        result1 = client1.generate_response(rebuttal_prompt1, max_tokens=600, temperature=self.config.temperature)
                 else:
-                    result1 = client1.generate_response(self.config.model_1, rebuttal_prompt1, max_tokens=600,
-                                                      temperature=self.config.temperature, timeout=self.config.timeout,
-                                                      streaming=self.config.streaming_output)
+                    # Ollama模式
+                    if self.config.streaming_output:
+                        result1 = client1._generate_streaming_response(self.config.model_1, rebuttal_prompt1, max_tokens=600,
+                                                          temperature=self.config.temperature, timeout=self.config.timeout,
+                                                          speaker_name=display_name1, response_type=response_type1)
+                        rebuttal_streaming1 = True
+                    else:
+                        result1 = client1.generate_response(self.config.model_1, rebuttal_prompt1, max_tokens=600,
+                                                          temperature=self.config.temperature, timeout=self.config.timeout,
+                                                          streaming=False)
 
                 if result1.get("success"):
                     response1 = result1.get("response", "")
@@ -2008,14 +3083,35 @@ class AICouncilScheduler:
                         "content": response1,
                         "type": "rebuttal"
                     })
-                    self._display_debate_response(display_name1, response1, f"反驳{role2}")
+                    if not rebuttal_streaming1:
+                        self._display_debate_response(display_name1, response1, response_type1)
 
             # 模型2回应模型1 - 增强版：看到完整上下文
             if result1.get("success") and result2.get("success"):
                 # 更新辩论历史，包含最新的AI1回应
                 debate_history = AICouncilScheduler._build_debate_context(debate_round, display_name1, display_name2)
 
-                rebuttal_prompt2 = f"""{role_prompt2}
+                if CURRENT_LANGUAGE == "en":
+                    rebuttal_prompt2 = f"""{role_prompt2}
+
+**IMPORTANT: You MUST respond entirely in English.**
+
+【Debate Topic】: {question}
+【Your Position】: {role2} (Con side)
+【Opponent Role】: {role1} (Pro side)
+
+{debate_history}
+
+【Your Task】
+Respond to {role1}'s rebuttal concisely and forcefully:
+1. Counter opponent's rebuttal points
+2. Use 1-2 key arguments to strengthen your position
+3. Introduce new debate angles
+
+Please respond concisely (key points only, max 300 words):
+"""
+                else:
+                    rebuttal_prompt2 = f"""{role_prompt2}
 
 【辩论主题】: {question}
 【你的立场】: {role2}（反方）
@@ -2032,12 +3128,27 @@ class AICouncilScheduler:
 请简洁回应（重点突出，不超过300字）：
 """
                 client2, _, is_api2 = self._get_client_for_model(self.config.model_2)
+                rebuttal_streaming2 = False
+                response_type2 = f"Rebuttal to {role1}" if CURRENT_LANGUAGE == "en" else f"反驳{role1}"
                 if is_api2:
-                    result2 = client2.generate_response(rebuttal_prompt2, max_tokens=600, temperature=self.config.temperature)
+                    # API模式：支持流式输出
+                    if self.config.streaming_output:
+                        result2 = client2.generate_response(rebuttal_prompt2, max_tokens=600, temperature=self.config.temperature,
+                                                           streaming=True, speaker_name=display_name2, response_type=response_type2)
+                        rebuttal_streaming2 = True
+                    else:
+                        result2 = client2.generate_response(rebuttal_prompt2, max_tokens=600, temperature=self.config.temperature)
                 else:
-                    result2 = client2.generate_response(self.config.model_2, rebuttal_prompt2, max_tokens=600,
-                                                      temperature=self.config.temperature, timeout=self.config.timeout,
-                                                      streaming=self.config.streaming_output)
+                    # Ollama模式
+                    if self.config.streaming_output:
+                        result2 = client2._generate_streaming_response(self.config.model_2, rebuttal_prompt2, max_tokens=600,
+                                                          temperature=self.config.temperature, timeout=self.config.timeout,
+                                                          speaker_name=display_name2, response_type=response_type2)
+                        rebuttal_streaming2 = True
+                    else:
+                        result2 = client2.generate_response(self.config.model_2, rebuttal_prompt2, max_tokens=600,
+                                                          temperature=self.config.temperature, timeout=self.config.timeout,
+                                                          streaming=False)
 
                 if result2.get("success"):
                     response2 = result2.get("response", "")
@@ -2047,20 +3158,26 @@ class AICouncilScheduler:
                         "content": response2,
                         "type": "rebuttal"
                     })
-                    self._display_debate_response(display_name2, response2, f"反驳{role1}")
+                    if not rebuttal_streaming2:
+                        self._display_debate_response(display_name2, response2, response_type2)
 
         # 协调阶段
-        DisplayManager.print_header("🎯 协调总结")
+        if CURRENT_LANGUAGE == "en":
+            DisplayManager.print_header("🎯 Coordination Summary")
+        else:
+            DisplayManager.print_header("🎯 协调总结")
 
         if consensus_reached:
-            print("🤝 双方已达成高度共识，生成最终总结")
+            if CURRENT_LANGUAGE == "en":
+                print("🤝 High consensus reached, generating final summary")
+            else:
+                print("🤝 双方已达成高度共识，生成最终总结")
             self._generate_consensus_summary(question, debate_round, role1, role2, consensus_analysis)
         else:
             self._coordinate_responses(question, debate_round, role1, role2)
 
-        # 保存记录
-        if self.config.save_history:
-            self._save_debate_entry(question, debate_round, display_name1, display_name2)
+        # 询问用户是否保存辩论记录
+        self._ask_save_debate_log(question, debate_round, display_name1, display_name2)
 
         # 返回完整的辩论记录，让用户可以看到所有发言
         return debate_round
@@ -2077,7 +3194,10 @@ class AICouncilScheduler:
         这是MACP系统的核心价值之一，能够将AI辩论转化为
         有价值的分析报告，帮助用户深入理解辩论主题
         """
-        print(f"\n🤖 协调AI ({self.config.coordinator_model}) 正在生成最终总结...")
+        if CURRENT_LANGUAGE == "en":
+            print(f"\n🤖 Coordinator AI ({self.config.coordinator_model}) generating final summary...")
+        else:
+            print(f"\n🤖 协调AI ({self.config.coordinator_model}) 正在生成最终总结...")
 
         # 构建辩论摘要
         debate_summary = ""
@@ -2118,12 +3238,6 @@ class AICouncilScheduler:
 
 请确保总结客观、中立，并基于双方的实际论述。"""
 
-        # 调试信息
-        logger.info(f"共识总结调试 - 问题: {question}")
-        logger.info(f"共识总结调试 - 辩论轮数: {len(debate_round)}")
-        logger.info(f"共识总结调试 - 共识分析长度: {len(consensus_analysis)}")
-        logger.info(f"共识总结调试 - 协调模型: {self.config.coordinator_model}")
-
         coord_client, coord_model, is_api = self._get_client_for_model(self.config.coordinator_model)
         if is_api:
             summary_result = coord_client.generate_response(summary_prompt, max_tokens=1000, temperature=self.config.temperature)
@@ -2132,17 +3246,10 @@ class AICouncilScheduler:
                                                           temperature=self.config.temperature, timeout=self.config.timeout,
                                                           streaming=False)
 
-        # 详细调试信息
-        logger.info(f"共识总结调试 - 请求结果: {summary_result}")
-        logger.info(f"共识总结调试 - 成功状态: {summary_result.get('success')}")
-        logger.info(f"共识总结调试 - 响应长度: {len(summary_result.get('response', ''))}")
-
         if summary_result.get("success"):
             summary = summary_result.get("response", "")
-            logger.info(f"共识总结调试 - 响应内容: {summary[:200]}...")
 
             if not summary.strip():
-                logger.warning("共识总结调试 - 响应内容为空")
                 print("⚠️  共识总结AI返回了空响应")
                 return f"基于共识分析的总结：{consensus_analysis}\n\n辩论已自动结束，双方达成高度共识。"
 
@@ -2151,8 +3258,7 @@ class AICouncilScheduler:
                   ("..." if len(summary) > self.config.display_length else ""))
             return summary
         else:
-            logger.warning(f"共识总结生成失败 - 错误详情: {summary_result}")
-            print(f"❌ 共识总结生成失败 - 详情: {summary_result.get('error', '未知错误')}")
+            print(f"❌ 共识总结生成失败")
             return f"基于共识分析的总结：{consensus_analysis}\n\n辩论已自动结束，双方达成高度共识。"
 
     def _coordinate_responses(self, question: str, debate_round: List[Dict[str, Any]],
@@ -2175,12 +3281,6 @@ class AICouncilScheduler:
 2. 主要分歧
 3. 综合建议"""
 
-        # 调试信息
-        logger.info(f"协调AI调试 - 问题: {question}")
-        logger.info(f"协调AI调试 - 辩论轮数: {len(debate_round)}")
-        logger.info(f"协调AI调试 - 摘要长度: {len(debate_summary)}")
-        logger.info(f"协调AI调试 - 协调模型: {self.config.coordinator_model}")
-
         coord_client, coord_model, is_api = self._get_client_for_model(self.config.coordinator_model)
         if is_api:
             coord_result = coord_client.generate_response(coord_prompt, max_tokens=800, temperature=self.config.temperature)
@@ -2189,17 +3289,10 @@ class AICouncilScheduler:
                                                         temperature=self.config.temperature, timeout=self.config.timeout,
                                                         streaming=False)
 
-        # 详细调试信息
-        logger.info(f"协调AI调试 - 请求结果: {coord_result}")
-        logger.info(f"协调AI调试 - 成功状态: {coord_result.get('success')}")
-        logger.info(f"协调AI调试 - 响应长度: {len(coord_result.get('response', ''))}")
-
         if coord_result.get("success"):
             coord_response = coord_result.get("response", "")
-            logger.info(f"协调AI调试 - 响应内容: {coord_response[:200]}...")
 
             if not coord_response.strip():
-                logger.warning("协调AI调试 - 响应内容为空")
                 print("⚠️  协调AI返回了空响应")
                 return "协调AI返回了空响应，请检查模型配置"
 
@@ -2208,9 +3301,8 @@ class AICouncilScheduler:
                   ("..." if len(coord_response) > self.config.display_length else ""))
             return coord_response
         else:
-            logger.warning(f"协调AI分析失败 - 错误详情: {coord_result}")
-            print(f"❌ 协调AI分析失败 - 详情: {coord_result.get('error', '未知错误')}")
-            return f"协调分析失败: {coord_result.get('error', '未知错误')}"
+            print(f"❌ 协调AI分析失败")
+            return f"协调分析失败"
 
     # ==================== 【海龟汤模式】 ====================
     def _turtle_soup_ask(self, question: str, role1: Optional[str] = None, role2: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -2412,6 +3504,144 @@ class AICouncilScheduler:
         }
         self.history_manager.add_entry(entry)
 
+    def _ask_save_debate_log(self, question: str, debate_round: List[Dict[str, Any]],
+                            role1: str, role2: str):
+        """询问用户是否保存辩论记录到日志
+        
+        辩论结束后，询问用户保存选项：
+        1. 存储到日志文件（追加到 macp.txt）
+        2. 单独保存为一个新的txt文件
+        3. 不保存
+        """
+        print("\n" + "=" * 50)
+        if CURRENT_LANGUAGE == "en":
+            print("📝 Debate ended, save debate record?")
+            print("=" * 50)
+            print("1. 📋 Save to log file (macp.txt)")
+            print("2. 📄 Save as separate txt file")
+            print("3. ❌ Don't save")
+            print("=" * 50)
+        else:
+            print("📝 辩论已结束，是否保存辩论记录？")
+            print("=" * 50)
+            print("1. 📋 存储到日志文件 (macp.txt)")
+            print("2. 📄 单独保存为新的txt文件")
+            print("3. ❌ 不保存")
+            print("=" * 50)
+        
+        while True:
+            if CURRENT_LANGUAGE == "en":
+                choice = input("Select (1/2/3): ").strip()
+            else:
+                choice = input("请选择 (1/2/3): ").strip()
+            
+            if choice == "1":
+                # 存储到日志文件
+                self._save_debate_entry(question, debate_round, role1, role2)
+                if self.config.save_history:
+                    self.history_manager.save_history()
+                if CURRENT_LANGUAGE == "en":
+                    print("✅ Debate record saved to log file (macp.txt)")
+                else:
+                    print("✅ 辩论记录已保存到日志文件 (macp.txt)")
+                break
+            elif choice == "2":
+                # 单独保存为新的txt文件
+                self._save_debate_to_separate_file(question, debate_round, role1, role2)
+                break
+            elif choice == "3":
+                if CURRENT_LANGUAGE == "en":
+                    print("⏭️ Skipped saving")
+                else:
+                    print("⏭️ 跳过保存")
+                break
+            else:
+                if CURRENT_LANGUAGE == "en":
+                    print("⚠️ Invalid choice, please enter 1, 2 or 3")
+                else:
+                    print("⚠️ 无效选择，请输入 1、2 或 3")
+
+    def _save_debate_to_separate_file(self, question: str, debate_round: List[Dict[str, Any]],
+                                      role1: str, role2: str):
+        """将辩论记录保存到单独的txt文件
+        
+        创建一个新的txt文件，包含完整的辩论内容，
+        文件名基于时间戳和辩论主题生成。
+        """
+        # 生成文件名（使用时间戳和简化的主题）
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # 清理问题作为文件名的一部分（移除特殊字符）
+        safe_question = re.sub(r'[\\/*?:"<>|]', '', question)[:30].strip()
+        if not safe_question:
+            safe_question = "Debate" if CURRENT_LANGUAGE == "en" else "辩论"
+        
+        if CURRENT_LANGUAGE == "en":
+            filename = f"Debate_Record_{timestamp}_{safe_question}.txt"
+        else:
+            filename = f"辩论记录_{timestamp}_{safe_question}.txt"
+        filepath = os.path.join(r"C:\Users\yuangu114514\Desktop", filename)
+        
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write("=" * 60 + "\n")
+                if CURRENT_LANGUAGE == "en":
+                    f.write("🤖 MACP Debate Record\n")
+                else:
+                    f.write("🤖 MACP 辩论记录\n")
+                f.write("=" * 60 + "\n\n")
+                
+                if CURRENT_LANGUAGE == "en":
+                    f.write(f"📅 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"🎯 Debate Topic: {question}\n")
+                    f.write(f"🎭 Debaters: {role1} vs {role2}\n")
+                    f.write(f"📊 Session ID: {self.session_id}\n\n")
+                    f.write("-" * 60 + "\n")
+                    f.write("📜 Debate Content\n")
+                else:
+                    f.write(f"📅 时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"🎯 辩论主题: {question}\n")
+                    f.write(f"🎭 辩论双方: {role1} vs {role2}\n")
+                    f.write(f"📊 会话ID: {self.session_id}\n\n")
+                    f.write("-" * 60 + "\n")
+                    f.write("📜 辩论内容\n")
+                f.write("-" * 60 + "\n\n")
+                
+                for entry in debate_round:
+                    round_num = entry.get("round", "?")
+                    speaker = entry.get("speaker", "Unknown" if CURRENT_LANGUAGE == "en" else "未知")
+                    content = entry.get("content", "")
+                    entry_type = entry.get("type", "")
+                    
+                    type_label = ""
+                    if entry_type == "opening":
+                        type_label = "[Opening Statement]" if CURRENT_LANGUAGE == "en" else "[开场陈述]"
+                    elif entry_type == "rebuttal":
+                        type_label = "[Rebuttal]" if CURRENT_LANGUAGE == "en" else "[反驳]"
+                    
+                    if CURRENT_LANGUAGE == "en":
+                        f.write(f"【Round {round_num}】 {speaker} {type_label}\n")
+                    else:
+                        f.write(f"【第{round_num}回合】 {speaker} {type_label}\n")
+                    f.write("-" * 40 + "\n")
+                    f.write(f"{content}\n\n")
+                
+                f.write("=" * 60 + "\n")
+                if CURRENT_LANGUAGE == "en":
+                    f.write("End of Debate Record\n")
+                else:
+                    f.write("辩论记录结束\n")
+                f.write("=" * 60 + "\n")
+            
+            if CURRENT_LANGUAGE == "en":
+                print(f"✅ Debate record saved to: {filepath}")
+            else:
+                print(f"✅ 辩论记录已保存到: {filepath}")
+            logger.info(f"辩论记录已单独保存到: {filepath}")
+            
+        except (OSError, IOError) as e:
+            print(f"❌ 保存辩论记录失败: {e}")
+            logger.error(f"保存辩论记录到单独文件失败: {e}")
+
     def _setup_debate_roles(self, question: str, role1: str, role2: str):
         """设置辩论角色并执行标签检测
 
@@ -2465,9 +3695,18 @@ class InteractiveInterface:
         self._print_welcome()
         self._print_commands()
 
+        # 检查是否需要配置API（用户在启动时选择了API模式但没有Ollama）
+        global NEED_API_SETUP
+        if NEED_API_SETUP:
+            print("\n" + "=" * 60)
+            print("🌐 检测到您选择了 API 模式，现在开始配置")
+            print("=" * 60)
+            self._configure_api_mode()
+            NEED_API_SETUP = False
+
         while True:
             try:
-                user_input = input(f"\n请输入问题或命令：").strip()
+                user_input = input(f"\n{get_text('input_prompt')}").strip()
 
                 if not user_input:
                     continue
@@ -2486,35 +3725,70 @@ class InteractiveInterface:
     @staticmethod
     def _print_welcome():
         """打印欢迎信息"""
-        DisplayManager.print_header("🤖 MACP 多AI协作平台 v5.0")
-
-        print(f"模型1：{config.model_1}")
-        print(f"模型2：{config.model_2}")
-        print(f"协调模型：{config.coordinator_model}")
-        print(f"优化模式：{'开启' if config.optimize_memory else '关闭'}")
+        if CURRENT_LANGUAGE == "en":
+            DisplayManager.print_header("🤖 MACP Multi-AI Collaboration Platform v5.0")
+            print(f"Model 1: {config.model_1}")
+            print(f"Model 2: {config.model_2}")
+            print(f"Coordinator: {config.coordinator_model}")
+            print(f"Optimize Mode: {'Enabled' if config.optimize_memory else 'Disabled'}")
+        else:
+            DisplayManager.print_header("🤖 MACP 多AI协作平台 v5.0")
+            print(f"模型1：{config.model_1}")
+            print(f"模型2：{config.model_2}")
+            print(f"协调模型：{config.coordinator_model}")
+            print(f"优化模式：{'开启' if config.optimize_memory else '关闭'}")
         DisplayManager.print_separator()
 
     @staticmethod
     def _print_commands():
         """打印可用命令"""
-        print("\n📋 可用命令：")
-        commands = [
-            ("help", "显示帮助"),
-            ("models", "查看可用模型"),
-            ("config", "查看当前配置"),
-            ("history", "查看历史记录"),
-            ("api", "配置API模式"),
-            ("debate", "进入辩论模式"),
-            ("turtle", "进入海龟汤模式"),
-            ("consensus", "配置共识检测"),
-            ("streaming", "切换流式输出模式"),
-            ("optimize", "开启优化模式"),
-            ("roles", "查看可用角色"),
-            ("tags", "查看标签系统"),
-            ("mode", "切换协调模式（auto/user）"),
-            ("clear", "清屏"),
-            ("exit", "退出程序")
-        ]
+        print(f"\n{get_text('available_commands')}")
+        
+        # 根据当前语言选择命令描述
+        if CURRENT_LANGUAGE == "en":
+            commands = [
+                ("help", "Show help"),
+                ("models", "View available models"),
+                ("config", "View current config"),
+                ("history", "View history"),
+                ("api", "Configure API mode"),
+                ("debate", "Enter debate mode"),
+                ("turtle", "Enter turtle soup mode"),
+                ("consensus", "Configure consensus detection"),
+                ("streaming", "Toggle streaming output"),
+                ("optimize", "Enable optimize mode"),
+                ("roles", "View available roles"),
+                ("tags", "View tag system"),
+                ("mode", "Switch coordination mode (auto/user)"),
+                ("addai", "Add new AI model (local/API)"),
+                ("listai", "List all AI models"),
+                ("removeai", "Remove an AI model"),
+                ("language", "Switch language / 切换语言"),
+                ("clear", "Clear screen"),
+                ("exit", "Exit program")
+            ]
+        else:
+            commands = [
+                ("help", "显示帮助"),
+                ("models", "查看可用模型"),
+                ("config", "查看当前配置"),
+                ("history", "查看历史记录"),
+                ("api", "配置API模式"),
+                ("debate", "进入辩论模式"),
+                ("turtle", "进入海龟汤模式"),
+                ("consensus", "配置共识检测"),
+                ("streaming", "切换流式输出模式"),
+                ("optimize", "开启优化模式"),
+                ("roles", "查看可用角色"),
+                ("tags", "查看标签系统"),
+                ("mode", "切换协调模式（auto/user）"),
+                ("addai", "添加新AI模型（本地/API）"),
+                ("listai", "列出所有AI模型"),
+                ("removeai", "移除AI模型"),
+                ("language", "切换语言 / Switch language"),
+                ("clear", "清屏"),
+                ("exit", "退出程序")
+            ]
 
         for cmd, desc in commands:
             print(f"  /{cmd:<12} - {desc}")
@@ -2522,16 +3796,25 @@ class InteractiveInterface:
 
     def _handle_question(self, question: str):
         """处理问题输入"""
-        print(f"\n🔍 正在处理问题...")
+        if CURRENT_LANGUAGE == "en":
+            print(f"\n🔍 Processing question...")
+        else:
+            print(f"\n🔍 正在处理问题...")
         self.scheduler.progress_tracker.start()
 
         try:
             self.scheduler.ask_both_models(question, mode="parallel")
             total_time = self.scheduler.progress_tracker.get_elapsed_time()
-            print(f"\n✅ 总耗时：{total_time:.2f}秒")
+            if CURRENT_LANGUAGE == "en":
+                print(f"\n✅ Total time: {total_time:.2f}s")
+            else:
+                print(f"\n✅ 总耗时：{total_time:.2f}秒")
         except Exception as e:
             logger.error(f"处理问题失败: {e}")
-            print(f"❌ 处理问题失败: {e}")
+            if CURRENT_LANGUAGE == "en":
+                print(f"❌ Failed to process question: {e}")
+            else:
+                print(f"❌ 处理问题失败: {e}")
 
     def _handle_command(self, command: str):
         """处理命令"""
@@ -2551,6 +3834,10 @@ class InteractiveInterface:
             'tags': self._show_tags,
             'mode': self._toggle_coordination_mode,
             'streaming': self._toggle_streaming_mode,
+            'language': self._switch_language,
+            'addai': self._add_ai_model,
+            'listai': self._list_ai_models,
+            'removeai': self._remove_ai_model,
             'clear': DisplayManager.clear_screen,
             'exit': self._exit_program
         }
@@ -2579,7 +3866,10 @@ class InteractiveInterface:
 
     def _show_history(self):
         """显示历史记录"""
-        print(f"\n📜 历史记录（会话ID：{self.scheduler.session_id}）：")
+        if CURRENT_LANGUAGE == "en":
+            print(f"\n📜 History (Session ID: {self.scheduler.session_id}):")
+        else:
+            print(f"\n📜 历史记录（会话ID：{self.scheduler.session_id}）：")
         history = self.scheduler.history_manager.get_recent_history(5)
 
         if history:
@@ -2588,54 +3878,89 @@ class InteractiveInterface:
                 entry_type = entry.get('type', 'unknown')
                 question = entry.get('question', '')[:60]
                 print(f"\n  [{i}] {timestamp} - {entry_type}")
-                print(f"      问题：{question}...")
+                if CURRENT_LANGUAGE == "en":
+                    print(f"      Question: {question}...")
+                else:
+                    print(f"      问题：{question}...")
         else:
-            print("  暂无历史记录")
+            if CURRENT_LANGUAGE == "en":
+                print("  No history records")
+            else:
+                print("  暂无历史记录")
 
     def _enter_debate_mode(self):
         """进入辩论模式"""
-        DisplayManager.print_header("💬 辩论模式")
-
-        # 选择协调模式
-        print("\n选择协调模式：")
-        print("  1. AI自动协调（默认）")
-        print("  2. 用户手动协调")
-
-        mode_choice = input("选择（1/2）: ").strip()
-        if mode_choice == "2":
-            config.coordination_mode = "user"
-            print("✅ 已选择用户协调模式")
+        if CURRENT_LANGUAGE == "en":
+            DisplayManager.print_header("💬 Debate Mode")
+            print("\nSelect coordination mode:")
+            print("  1. AI Auto-coordination (default)")
+            print("  2. User Manual coordination")
+            mode_choice = input("Select (1/2): ").strip()
+            if mode_choice == "2":
+                config.coordination_mode = "user"
+                print("✅ User coordination mode selected")
+            else:
+                config.coordination_mode = "auto"
+                print("✅ AI auto-coordination mode selected")
         else:
-            config.coordination_mode = "auto"
-            print("✅ 已选择AI自动协调模式")
+            DisplayManager.print_header("💬 辩论模式")
+            print("\n选择协调模式：")
+            print("  1. AI自动协调（默认）")
+            print("  2. 用户手动协调")
+            mode_choice = input("选择（1/2）: ").strip()
+            if mode_choice == "2":
+                config.coordination_mode = "user"
+                print("✅ 已选择用户协调模式")
+            else:
+                config.coordination_mode = "auto"
+                print("✅ 已选择AI自动协调模式")
 
         # 输入问题
-        question = input("\n请输入辩论问题：").strip()
-        if not question:
-            print("❌ 问题不能为空")
-            return
+        if CURRENT_LANGUAGE == "en":
+            question = input("\nEnter debate topic: ").strip()
+            if not question:
+                print("❌ Topic cannot be empty")
+                return
+        else:
+            question = input("\n请输入辩论问题：").strip()
+            if not question:
+                print("❌ 问题不能为空")
+                return
 
         # 选择角色
         role1, role2 = self._select_debate_roles()
 
         # 回合数
-        rounds_input = input(f"\n辩论回合数（默认:{config.debate_rounds}）: ").strip()
+        if CURRENT_LANGUAGE == "en":
+            rounds_input = input(f"\nDebate rounds (default:{config.debate_rounds}): ").strip()
+        else:
+            rounds_input = input(f"\n辩论回合数（默认:{config.debate_rounds}）: ").strip()
         if rounds_input.isdigit():
             config.debate_rounds = int(rounds_input)
 
         # 开始辩论
-        print(f"\n🎬 开始辩论：{role1} vs {role2}")
-        print(f"问题：{question}")
+        if CURRENT_LANGUAGE == "en":
+            print(f"\n🎬 Starting debate: {role1} vs {role2}")
+            print(f"Topic: {question}")
+        else:
+            print(f"\n🎬 开始辩论：{role1} vs {role2}")
+            print(f"问题：{question}")
         DisplayManager.print_separator()
 
         self.scheduler.progress_tracker.start()
         try:
             self.scheduler.ask_both_models(question, mode="debate", role1=role1, role2=role2)
             total_time = self.scheduler.progress_tracker.get_elapsed_time()
-            print(f"\n✅ 辩论完成 | 总耗时：{total_time:.2f}秒")
+            if CURRENT_LANGUAGE == "en":
+                print(f"\n✅ Debate complete | Total time: {total_time:.2f}s")
+            else:
+                print(f"\n✅ 辩论完成 | 总耗时：{total_time:.2f}秒")
         except Exception as e:
             logger.error(f"辩论失败: {e}")
-            print(f"❌ 辩论失败: {e}")
+            if CURRENT_LANGUAGE == "en":
+                print(f"❌ Debate failed: {e}")
+            else:
+                print(f"❌ 辩论失败: {e}")
 
     def _enter_turtle_soup_mode(self):
         """进入海龟汤模式"""
@@ -2664,22 +3989,415 @@ class InteractiveInterface:
     def _toggle_optimize_mode():
         """切换优化模式"""
         config.optimize_memory = not config.optimize_memory
-        status = "开启" if config.optimize_memory else "关闭"
-        print(f"✅ 优化模式已{status}")
+        if CURRENT_LANGUAGE == "en":
+            status = "enabled" if config.optimize_memory else "disabled"
+            print(f"✅ Optimize mode {status}")
+        else:
+            status = "开启" if config.optimize_memory else "关闭"
+            print(f"✅ 优化模式已{status}")
 
     @staticmethod
     def _toggle_streaming_mode():
         """切换流式输出模式"""
         config.streaming_output = not config.streaming_output
-        status = "开启" if config.streaming_output else "关闭"
-        mode_desc = "AI回答将逐字实时显示" if config.streaming_output else "AI回答将一次性显示"
-        print(f"✅ 流式输出已{status}")
+        if CURRENT_LANGUAGE == "en":
+            status = "enabled" if config.streaming_output else "disabled"
+            mode_desc = "AI responses will be displayed in real-time" if config.streaming_output else "AI responses will be displayed at once"
+            print(f"✅ Streaming output {status}")
+        else:
+            status = "开启" if config.streaming_output else "关闭"
+            mode_desc = "AI回答将逐字实时显示" if config.streaming_output else "AI回答将一次性显示"
+            print(f"✅ 流式输出已{status}")
         print(f"   {mode_desc}")
+
+    @staticmethod
+    def _switch_language():
+        """切换界面语言 / Switch interface language"""
+        global CURRENT_LANGUAGE
+        
+        DisplayManager.print_header(get_text("language_title"))
+        
+        current = "中文 (Chinese)" if CURRENT_LANGUAGE == "zh" else "English (英文)"
+        print(f"{get_text('current_language')}: {current}")
+        print()
+        print(get_text("select_language"))
+        print("  1. 中文 (Chinese)")
+        print("  2. English (英文)")
+        print()
+        
+        choice = input(">>> ").strip()
+        
+        if choice == "1":
+            CURRENT_LANGUAGE = "zh"
+            config.language = "zh"
+            config.save_to_file(CONFIG_FILE_PATH)  # 保存配置
+            print("\n✅ 语言已切换为中文")
+            print("   界面将以中文显示")
+            print("   ✅ 设置已保存，下次启动自动生效")
+        elif choice == "2":
+            CURRENT_LANGUAGE = "en"
+            config.language = "en"
+            config.save_to_file(CONFIG_FILE_PATH)  # 保存配置
+            print("\n✅ Language changed to English")
+            print("   Interface will be displayed in English")
+            print("   ✅ Settings saved, will take effect on next startup")
+        else:
+            if CURRENT_LANGUAGE == "en":
+                print("⚠️ Invalid choice, language unchanged")
+            else:
+                print("⚠️ 无效选择，语言未改变")
+        
+        DisplayManager.print_separator()
+
+    def _add_ai_model(self):
+        """添加新的AI模型（支持本地Ollama和API）"""
+        if CURRENT_LANGUAGE == "en":
+            DisplayManager.print_header("➕ Add New AI Model")
+            print("Select AI type:")
+            print("  1. Local Ollama model")
+            print("  2. API model (OpenAI compatible)")
+            print("  3. Cancel")
+        else:
+            DisplayManager.print_header("➕ 添加新AI模型")
+            print("选择AI类型：")
+            print("  1. 本地Ollama模型")
+            print("  2. API模型（兼容OpenAI格式）")
+            print("  3. 取消")
+        
+        choice = input(">>> ").strip()
+        
+        if choice == "1":
+            # 添加本地Ollama模型
+            self._add_ollama_model()
+        elif choice == "2":
+            # 添加API模型
+            self._add_api_model()
+        else:
+            if CURRENT_LANGUAGE == "en":
+                print("⏭️ Cancelled")
+            else:
+                print("⏭️ 已取消")
+
+    def _add_ollama_model(self):
+        """添加本地Ollama模型"""
+        if CURRENT_LANGUAGE == "en":
+            print("\n📦 Available local Ollama models:")
+        else:
+            print("\n📦 可用的本地Ollama模型：")
+        
+        # 获取Ollama模型列表
+        try:
+            models = self.scheduler.client.get_available_models()
+            if models:
+                for i, model in enumerate(models, 1):
+                    print(f"  {i}. {model}")
+                
+                if CURRENT_LANGUAGE == "en":
+                    model_input = input("\nSelect model number or enter model name: ").strip()
+                else:
+                    model_input = input("\n选择模型编号或输入模型名称: ").strip()
+                
+                # 解析输入
+                if model_input.isdigit():
+                    idx = int(model_input)
+                    if 1 <= idx <= len(models):
+                        model_name = models[idx - 1]
+                    else:
+                        print("❌ Invalid selection" if CURRENT_LANGUAGE == "en" else "❌ 无效选择")
+                        return
+                else:
+                    model_name = model_input
+                
+                # 输入AI名称
+                if CURRENT_LANGUAGE == "en":
+                    ai_name = input(f"Enter a name for this AI (default: {model_name}): ").strip() or model_name
+                else:
+                    ai_name = input(f"为这个AI起个名字（默认: {model_name}）: ").strip() or model_name
+                
+                # 添加到配置
+                new_ai = {
+                    "name": ai_name,
+                    "type": "ollama",
+                    "model": model_name,
+                    "api_config": None
+                }
+                config.extra_ai_models.append(new_ai)
+                config.save_to_file(CONFIG_FILE_PATH)
+                
+                if CURRENT_LANGUAGE == "en":
+                    print(f"✅ AI model '{ai_name}' ({model_name}) added successfully!")
+                else:
+                    print(f"✅ AI模型 '{ai_name}' ({model_name}) 添加成功！")
+            else:
+                print("❌ No models found" if CURRENT_LANGUAGE == "en" else "❌ 未找到模型")
+        except Exception as e:
+            print(f"❌ Error: {e}")
+
+    def _add_api_model(self):
+        """添加API模型"""
+        if CURRENT_LANGUAGE == "en":
+            print("\n🌐 Configure API Model")
+            print("\nSelect API provider:")
+            print("  1. SiliconFlow (硅基流动)")
+            print("  2. DeepSeek")
+            print("  3. Volcengine Ark (火山引擎)")
+            print("  4. OpenAI")
+            print("  5. xAI (Grok)")
+            print("  6. Google Gemini")
+            print("  7. Anthropic Claude")
+            print("  8. OpenRouter")
+            print("  9. Custom (OpenAI compatible)")
+        else:
+            print("\n🌐 配置API模型")
+            print("\n选择API提供方：")
+            print("  1. 硅基流动 (SiliconFlow)")
+            print("  2. DeepSeek")
+            print("  3. 火山引擎 (Volcengine Ark)")
+            print("  4. OpenAI")
+            print("  5. xAI (Grok)")
+            print("  6. Google Gemini")
+            print("  7. Anthropic Claude")
+            print("  8. OpenRouter (多模型聚合)")
+            print("  9. 自定义（兼容OpenAI格式）")
+        
+        provider_choice = input(">>> ").strip() or "9"
+        
+        provider_map = {
+            "1": ("siliconflow", "https://api.siliconflow.cn/v1"),
+            "2": ("deepseek", "https://api.deepseek.com/v1"),
+            "3": ("volcengine", "https://ark.cn-beijing.volces.com/api/v3"),
+            "4": ("openai", "https://api.openai.com/v1"),
+            "5": ("xai", "https://api.x.ai/v1"),
+            "6": ("gemini", "https://generativelanguage.googleapis.com/v1beta/openai"),
+            "7": ("claude", "https://api.anthropic.com/v1"),
+            "8": ("openrouter", "https://openrouter.ai/api/v1"),
+            "9": ("custom", "https://api.openai.com/v1"),
+        }
+        provider, default_base = provider_map.get(provider_choice, provider_map["9"])
+        
+        # 显示提供方说明
+        provider_info = {
+            "siliconflow": ("硅基流动", "国内平台，支持多种开源模型", "https://cloud.siliconflow.cn/"),
+            "deepseek": ("DeepSeek", "国内AI，推理能力强", "https://platform.deepseek.com/"),
+            "volcengine": ("火山引擎", "字节跳动旗下，豆包模型", "https://console.volcengine.com/ark"),
+            "openai": ("OpenAI", "GPT系列模型", "https://platform.openai.com/"),
+            "xai": ("xAI", "马斯克的Grok模型", "https://x.ai/"),
+            "gemini": ("Google Gemini", "谷歌AI模型", "https://aistudio.google.com/"),
+            "claude": ("Anthropic Claude", "Claude系列模型", "https://console.anthropic.com/"),
+            "openrouter": ("OpenRouter", "多模型聚合平台，一个API访问多种模型", "https://openrouter.ai/"),
+        }
+        
+        if provider in provider_info:
+            name, desc, url = provider_info[provider]
+            if CURRENT_LANGUAGE == "en":
+                print(f"\n📌 {name}: {desc}")
+                print(f"   Get API key: {url}")
+            else:
+                print(f"\n📌 {name}：{desc}")
+                print(f"   获取API密钥：{url}")
+        
+        # 检查是否有已保存的密钥
+        provider_key_mapping = {
+            "siliconflow": config.siliconflow_api_key,
+            "deepseek": config.deepseek_api_key,
+            "volcengine": config.volcengine_api_key,
+            "openai": getattr(config, 'openai_api_key', ''),
+            "xai": getattr(config, 'xai_api_key', ''),
+            "gemini": getattr(config, 'gemini_api_key', ''),
+            "claude": getattr(config, 'claude_api_key', ''),
+            "openrouter": getattr(config, 'openrouter_api_key', ''),
+        }
+        saved_key = provider_key_mapping.get(provider, "")
+        
+        # 配置API
+        if CURRENT_LANGUAGE == "en":
+            base_url = input(f"API Base URL (default: {default_base}): ").strip() or default_base
+        else:
+            base_url = input(f"API基础地址（默认: {default_base}）: ").strip() or default_base
+        
+        api_url = f"{base_url.rstrip('/')}/chat/completions"
+        
+        # API密钥
+        if saved_key:
+            if CURRENT_LANGUAGE == "en":
+                print(f"🔑 Found saved API key for {provider}")
+                use_saved = input("Use saved key? (Y/n): ").strip().lower() != 'n'
+            else:
+                print(f"🔑 找到已保存的 {provider} API密钥")
+                use_saved = input("使用已保存的密钥？(Y/n): ").strip().lower() != 'n'
+            
+            if use_saved:
+                api_key = saved_key
+            else:
+                api_key = input("API Key: ").strip()
+        else:
+            api_key = input("API Key: ").strip()
+        
+        if not api_key:
+            print("❌ API key required" if CURRENT_LANGUAGE == "en" else "❌ 必须提供API密钥")
+            return
+        
+        # 保存密钥到全局配置
+        provider_key_attr = {
+            "siliconflow": "siliconflow_api_key",
+            "deepseek": "deepseek_api_key",
+            "volcengine": "volcengine_api_key",
+            "openai": "openai_api_key",
+            "xai": "xai_api_key",
+            "gemini": "gemini_api_key",
+            "claude": "claude_api_key",
+            "openrouter": "openrouter_api_key",
+        }
+        if provider in provider_key_attr:
+            setattr(config, provider_key_attr[provider], api_key)
+        
+        # 显示推荐模型
+        recommended_models = {
+            "siliconflow": ["Qwen/Qwen2.5-7B-Instruct", "Qwen/Qwen2.5-32B-Instruct", "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"],
+            "deepseek": ["deepseek-chat", "deepseek-reasoner"],
+            "volcengine": ["doubao-pro-32k", "doubao-lite-32k"],
+            "openai": ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo", "o1-mini"],
+            "xai": ["grok-beta", "grok-2-1212"],
+            "gemini": ["gemini-2.0-flash-exp", "gemini-1.5-pro", "gemini-1.5-flash"],
+            "claude": ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"],
+            "openrouter": ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "google/gemini-pro", "meta-llama/llama-3.1-70b-instruct"],
+        }
+        
+        if provider in recommended_models:
+            if CURRENT_LANGUAGE == "en":
+                print(f"\n📋 Recommended models for {provider}:")
+            else:
+                print(f"\n📋 {provider} 推荐模型：")
+            for i, model in enumerate(recommended_models[provider], 1):
+                print(f"  {i}. {model}")
+        
+        # 尝试获取模型列表
+        if CURRENT_LANGUAGE == "en":
+            model_name = input("\nModel name (enter number or type name): ").strip()
+        else:
+            model_name = input("\n模型名称（输入编号或直接输入名称）: ").strip()
+        
+        # 如果输入的是数字，转换为模型名
+        if model_name.isdigit() and provider in recommended_models:
+            idx = int(model_name) - 1
+            models = recommended_models[provider]
+            if 0 <= idx < len(models):
+                model_name = models[idx]
+        
+        if not model_name:
+            print("❌ Model name required" if CURRENT_LANGUAGE == "en" else "❌ 必须提供模型名称")
+            return
+        
+        # AI名称
+        if CURRENT_LANGUAGE == "en":
+            ai_name = input(f"Enter a name for this AI (default: {model_name}): ").strip() or model_name
+        else:
+            ai_name = input(f"为这个AI起个名字（默认: {model_name}）: ").strip() or model_name
+        
+        # 添加到配置
+        new_ai = {
+            "name": ai_name,
+            "type": "api",
+            "model": model_name,
+            "api_config": {
+                "provider": provider,
+                "base_url": base_url,
+                "api_url": api_url,
+                "api_key": api_key,
+                "model": model_name
+            }
+        }
+        config.extra_ai_models.append(new_ai)
+        config.save_to_file(CONFIG_FILE_PATH)
+        
+        if CURRENT_LANGUAGE == "en":
+            print(f"✅ API AI model '{ai_name}' added successfully!")
+        else:
+            print(f"✅ API AI模型 '{ai_name}' 添加成功！")
+
+    def _list_ai_models(self):
+        """列出所有AI模型"""
+        if CURRENT_LANGUAGE == "en":
+            DisplayManager.print_header("📋 All AI Models")
+            print("\n🔹 Built-in Models:")
+            print(f"  1. Model 1: {config.model_1} ({'API' if config.model_1_use_api else 'Ollama'})")
+            print(f"  2. Model 2: {config.model_2} ({'API' if config.model_2_use_api else 'Ollama'})")
+            print(f"  3. Coordinator: {config.coordinator_model} ({'API' if config.coordinator_use_api else 'Ollama'})")
+        else:
+            DisplayManager.print_header("📋 所有AI模型")
+            print("\n🔹 内置模型：")
+            print(f"  1. 模型1: {config.model_1} ({'API' if config.model_1_use_api else 'Ollama'})")
+            print(f"  2. 模型2: {config.model_2} ({'API' if config.model_2_use_api else 'Ollama'})")
+            print(f"  3. 协调模型: {config.coordinator_model} ({'API' if config.coordinator_use_api else 'Ollama'})")
+        
+        if config.extra_ai_models:
+            if CURRENT_LANGUAGE == "en":
+                print("\n🔸 Additional Models:")
+            else:
+                print("\n🔸 额外添加的模型：")
+            for i, ai in enumerate(config.extra_ai_models, 1):
+                ai_type = ai.get("type", "unknown")
+                ai_name = ai.get("name", "Unknown")
+                model = ai.get("model", "Unknown")
+                print(f"  {i}. {ai_name} ({model}) [{ai_type.upper()}]")
+        else:
+            if CURRENT_LANGUAGE == "en":
+                print("\n🔸 No additional models added. Use /addai to add more.")
+            else:
+                print("\n🔸 暂无额外添加的模型。使用 /addai 添加更多。")
+        
+        DisplayManager.print_separator()
+
+    def _remove_ai_model(self):
+        """移除AI模型"""
+        if not config.extra_ai_models:
+            if CURRENT_LANGUAGE == "en":
+                print("❌ No additional AI models to remove")
+            else:
+                print("❌ 没有可移除的额外AI模型")
+            return
+        
+        if CURRENT_LANGUAGE == "en":
+            DisplayManager.print_header("➖ Remove AI Model")
+            print("Select model to remove:")
+        else:
+            DisplayManager.print_header("➖ 移除AI模型")
+            print("选择要移除的模型：")
+        
+        for i, ai in enumerate(config.extra_ai_models, 1):
+            print(f"  {i}. {ai.get('name', 'Unknown')} ({ai.get('model', '')})")
+        
+        if CURRENT_LANGUAGE == "en":
+            print(f"  0. Cancel")
+        else:
+            print(f"  0. 取消")
+        
+        choice = input(">>> ").strip()
+        
+        if choice == "0" or not choice:
+            return
+        
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(config.extra_ai_models):
+                removed = config.extra_ai_models.pop(idx)
+                config.save_to_file(CONFIG_FILE_PATH)
+                if CURRENT_LANGUAGE == "en":
+                    print(f"✅ Model '{removed.get('name', '')}' removed")
+                else:
+                    print(f"✅ 模型 '{removed.get('name', '')}' 已移除")
+            else:
+                print("❌ Invalid selection" if CURRENT_LANGUAGE == "en" else "❌ 无效选择")
+        else:
+            print("❌ Invalid input" if CURRENT_LANGUAGE == "en" else "❌ 无效输入")
 
     @staticmethod
     def _show_roles():
         """显示可用角色"""
-        print("\n🎭 可用角色（支持输入数字选择）：")
+        if CURRENT_LANGUAGE == "en":
+            print("\n🎭 Available roles (select by number):")
+        else:
+            print("\n🎭 可用角色（支持输入数字选择）：")
         roles = role_system.get_all_roles()
         for i, role in enumerate(roles, 1):
             print(f"  {i}. {role}")
@@ -2748,50 +4466,82 @@ class InteractiveInterface:
         current = config.coordination_mode
         new_mode = "user" if current == "auto" else "auto"
         config.coordination_mode = new_mode
-        print(f"✅ 协调模式已切换：{current} -> {new_mode}")
+        if CURRENT_LANGUAGE == "en":
+            print(f"✅ Coordination mode switched: {current} -> {new_mode}")
+        else:
+            print(f"✅ 协调模式已切换：{current} -> {new_mode}")
 
     def _handle_interrupt(self):
         """处理中断信号"""
-        print("\n\n⚠️  检测到中断信号")
-        choice = input("是否退出程序？（y/N）: ").strip().lower()
+        if CURRENT_LANGUAGE == "en":
+            print("\n\n⚠️ Interrupt signal detected")
+            choice = input("Exit program? (y/N): ").strip().lower()
+        else:
+            print("\n\n⚠️ 检测到中断信号")
+            choice = input("是否退出程序？（y/N）: ").strip().lower()
         if choice == 'y':
             self._exit_program()
 
     def _configure_api_mode(self):
         """配置API模式"""
-        DisplayManager.print_header("🔗 API模式配置")
-
-        print(f"当前API模式状态：{'已启用' if config.api_mode_enabled else '未启用'}")
-        print(f"API提供方：{getattr(config, 'api_provider', 'custom')}")
-        print(f"API基础地址：{getattr(config, 'api_base_url', '')}")
-        print(f"API地址：{config.api_url}")
-        print(f"API模型：{config.api_model}")
-        print(f"API密钥：{'已设置' if config.api_key else '未设置'}")
-        print(f"模型1使用API：{'是' if config.model_1_use_api else '否'}")
-        print(f"模型2使用API：{'是' if config.model_2_use_api else '否'}")
-        print(f"协调AI使用API：{'是' if config.coordinator_use_api else '否'}")
-
-        DisplayManager.print_separator()
-
-        # 询问是否启用API模式
-        enable_api = InputValidator.get_yes_no_input("是否启用API模式？", default=config.api_mode_enabled)
+        if CURRENT_LANGUAGE == "en":
+            DisplayManager.print_header("🔗 API Mode Configuration")
+            print(f"Current API mode: {'Enabled' if config.api_mode_enabled else 'Disabled'}")
+            print(f"API Provider: {getattr(config, 'api_provider', 'custom')}")
+            print(f"API Base URL: {getattr(config, 'api_base_url', '')}")
+            print(f"API URL: {config.api_url}")
+            print(f"API Model: {config.api_model}")
+            print(f"API Key: {'Set' if config.api_key else 'Not set'}")
+            print(f"Model 1 uses API: {'Yes' if config.model_1_use_api else 'No'}")
+            print(f"Model 2 uses API: {'Yes' if config.model_2_use_api else 'No'}")
+            print(f"Coordinator uses API: {'Yes' if config.coordinator_use_api else 'No'}")
+            DisplayManager.print_separator()
+            enable_api = InputValidator.get_yes_no_input("Enable API mode?", default=config.api_mode_enabled)
+        else:
+            DisplayManager.print_header("🔗 API模式配置")
+            print(f"当前API模式状态：{'已启用' if config.api_mode_enabled else '未启用'}")
+            print(f"API提供方：{getattr(config, 'api_provider', 'custom')}")
+            print(f"API基础地址：{getattr(config, 'api_base_url', '')}")
+            print(f"API地址：{config.api_url}")
+            print(f"API模型：{config.api_model}")
+            print(f"API密钥：{'已设置' if config.api_key else '未设置'}")
+            print(f"模型1使用API：{'是' if config.model_1_use_api else '否'}")
+            print(f"模型2使用API：{'是' if config.model_2_use_api else '否'}")
+            print(f"协调AI使用API：{'是' if config.coordinator_use_api else '否'}")
+            DisplayManager.print_separator()
+            enable_api = InputValidator.get_yes_no_input("是否启用API模式？", default=config.api_mode_enabled)
         if enable_api:
             # 逐个配置：模型1、模型2、协调AI
             any_use_api = False
-            targets = [
-                ("模型1", "model_1"),
-                ("模型2", "model_2"),
-                ("协调AI", "coordinator"),
-            ]
+            if CURRENT_LANGUAGE == "en":
+                targets = [
+                    ("Model 1", "model_1"),
+                    ("Model 2", "model_2"),
+                    ("Coordinator", "coordinator"),
+                ]
+            else:
+                targets = [
+                    ("模型1", "model_1"),
+                    ("模型2", "model_2"),
+                    ("协调AI", "coordinator"),
+                ]
 
             for label, key in targets:
                 print("\n" + "-" * 40)
-                print(f"⚙️  配置 {label} 的API参数")
+                if CURRENT_LANGUAGE == "en":
+                    print(f"⚙️  Configure API for {label}")
+                else:
+                    print(f"⚙️  配置 {label} 的API参数")
                 use_api_attr = f"{key}_use_api"
                 current_use = getattr(config, use_api_attr, False)
-                use_api = InputValidator.get_yes_no_input(
-                    f"{label} 是否使用外部API？（当前: {'是' if current_use else '否'}）", default=current_use
-                )
+                if CURRENT_LANGUAGE == "en":
+                    use_api = InputValidator.get_yes_no_input(
+                        f"Use external API for {label}? (Current: {'Yes' if current_use else 'No'})", default=current_use
+                    )
+                else:
+                    use_api = InputValidator.get_yes_no_input(
+                        f"{label} 是否使用外部API？（当前: {'是' if current_use else '否'}）", default=current_use
+                    )
                 setattr(config, use_api_attr, use_api)
 
                 if not use_api:
@@ -2807,12 +4557,20 @@ class InteractiveInterface:
                 model_attr = f"{key}_api_model"
 
                 current_provider = getattr(config, provider_attr, "") or "custom"
-                print(f"\n🏢 为 {label} 选择API提供方（当前: {current_provider}）：")
-                print("  1. 硅基流动 (SiliconFlow)")
-                print("  2. DeepSeek")
-                print("  3. 火山引擎 (Volcengine Ark)")
-                print("  4. 自定义 (兼容OpenAI格式)")
-                provider_choice = input("输入编号(1-4，回车保持当前/自定义): ").strip() or "4"
+                if CURRENT_LANGUAGE == "en":
+                    print(f"\n🏢 Select API provider for {label} (Current: {current_provider}):")
+                    print("  1. SiliconFlow")
+                    print("  2. DeepSeek")
+                    print("  3. Volcengine Ark")
+                    print("  4. Custom (OpenAI compatible)")
+                    provider_choice = input("Enter number (1-4, Enter for current/custom): ").strip() or "4"
+                else:
+                    print(f"\n🏢 为 {label} 选择API提供方（当前: {current_provider}）：")
+                    print("  1. 硅基流动 (SiliconFlow)")
+                    print("  2. DeepSeek")
+                    print("  3. 火山引擎 (Volcengine Ark)")
+                    print("  4. 自定义 (兼容OpenAI格式)")
+                    provider_choice = input("输入编号(1-4，回车保持当前/自定义): ").strip() or "4"
 
                 provider_map = {
                     "1": ("siliconflow", "https://api.siliconflow.cn/v1"),
@@ -2823,10 +4581,35 @@ class InteractiveInterface:
                 provider, default_base = provider_map.get(provider_choice, provider_map["4"])
                 setattr(config, provider_attr, provider)
 
+                # 检查是否有该提供方的已保存密钥（从全局或其他模型配置中查找）
+                saved_keys_for_provider = {}
+                provider_key_mapping = {
+                    "siliconflow": "siliconflow_api_key",
+                    "deepseek": "deepseek_api_key", 
+                    "volcengine": "volcengine_api_key",
+                }
+                
+                # 查找已保存的密钥
+                global_saved_key = getattr(config, provider_key_mapping.get(provider, ""), "")
+                existing_key_for_this = getattr(config, key_attr, "")
+                
+                # 从其他模型配置中查找同一提供方的密钥
+                for other_key in ["model_1", "model_2", "coordinator"]:
+                    if other_key != key:
+                        other_provider = getattr(config, f"{other_key}_api_provider", "")
+                        if other_provider == provider:
+                            other_key_value = getattr(config, f"{other_key}_api_key", "")
+                            if other_key_value:
+                                saved_keys_for_provider[other_key] = other_key_value
+                
                 # 配置基础地址
                 current_base = getattr(config, base_attr, "") or default_base
-                print("\n🔧 配置API基础地址：")
-                base_url = input(f"{label} API基础地址 (当前: {current_base}): ").strip()
+                if CURRENT_LANGUAGE == "en":
+                    print("\n🔧 Configure API Base URL:")
+                    base_url = input(f"{label} API Base URL (Current: {current_base}): ").strip()
+                else:
+                    print("\n🔧 配置API基础地址：")
+                    base_url = input(f"{label} API基础地址 (当前: {current_base}): ").strip()
                 if not base_url:
                     base_url = current_base
                 base_url = base_url.rstrip("/")
@@ -2835,16 +4618,67 @@ class InteractiveInterface:
                 # chat completions endpoint
                 default_chat_url = f"{base_url}/chat/completions"
                 current_chat = getattr(config, url_attr, "") or default_chat_url
-                api_url = input(f"{label} ChatCompletions地址 (当前: {current_chat}): ").strip()
+                if CURRENT_LANGUAGE == "en":
+                    api_url = input(f"{label} ChatCompletions URL (Current: {current_chat}): ").strip()
+                else:
+                    api_url = input(f"{label} ChatCompletions地址 (当前: {current_chat}): ").strip()
                 api_url = (api_url or current_chat).rstrip("/")
                 setattr(config, url_attr, api_url)
 
-                # API Key：优先已有单独key，其次全局api_key
-                existing_key = getattr(config, key_attr, "") or config.api_key
-                api_key_input = input(f"{label} API密钥 (当前: {'已设置' if existing_key else '未设置'}，留空保持不变): ").strip()
-                if api_key_input:
-                    setattr(config, key_attr, api_key_input)
-                    existing_key = api_key_input
+                # API Key：提供使用已保存密钥或输入新密钥的选项
+                existing_key = existing_key_for_this or global_saved_key or config.api_key
+                
+                # 如果有已保存的密钥（来自同一提供方的其他配置）
+                if saved_keys_for_provider or existing_key:
+                    if CURRENT_LANGUAGE == "en":
+                        print(f"\n🔑 API Key Configuration:")
+                        print("  1. Use saved key" + (" ✅ Key exists" if existing_key else ""))
+                        if saved_keys_for_provider:
+                            print(f"     (Same provider configured for: {', '.join(saved_keys_for_provider.keys())})")
+                        print("  2. Enter new key")
+                        key_choice = input("Select (1/2, Enter for saved): ").strip() or "1"
+                    else:
+                        print(f"\n🔑 API密钥配置：")
+                        print("  1. 使用已保存的密钥" + (" ✅ 当前已有密钥" if existing_key else ""))
+                        if saved_keys_for_provider:
+                            print(f"     (同提供方其他模型已配置: {', '.join(saved_keys_for_provider.keys())})")
+                        print("  2. 输入新的密钥")
+                        key_choice = input("请选择 (1/2，回车使用已保存): ").strip() or "1"
+                    
+                    if key_choice == "2":
+                        if CURRENT_LANGUAGE == "en":
+                            api_key_input = input(f"Enter API key for {label}: ").strip()
+                        else:
+                            api_key_input = input(f"请输入 {label} 的API密钥: ").strip()
+                        if api_key_input:
+                            setattr(config, key_attr, api_key_input)
+                            # 同时保存到提供方全局密钥
+                            if provider in provider_key_mapping:
+                                setattr(config, provider_key_mapping[provider], api_key_input)
+                            existing_key = api_key_input
+                    else:
+                        # 使用已保存的密钥
+                        if not existing_key and saved_keys_for_provider:
+                            # 使用同一提供方其他模型的密钥
+                            existing_key = list(saved_keys_for_provider.values())[0]
+                        if existing_key:
+                            setattr(config, key_attr, existing_key)
+                            if CURRENT_LANGUAGE == "en":
+                                print(f"   ✅ Using saved key")
+                            else:
+                                print(f"   ✅ 已使用保存的密钥")
+                else:
+                    # 没有已保存的密钥，直接输入
+                    if CURRENT_LANGUAGE == "en":
+                        api_key_input = input(f"{label} API Key: ").strip()
+                    else:
+                        api_key_input = input(f"{label} API密钥: ").strip()
+                    if api_key_input:
+                        setattr(config, key_attr, api_key_input)
+                        # 同时保存到提供方全局密钥
+                        if provider in provider_key_mapping:
+                            setattr(config, provider_key_mapping[provider], api_key_input)
+                        existing_key = api_key_input
 
                 # 先尝试拉取该提供方的模型列表
                 models: List[str] = []
@@ -2856,10 +4690,16 @@ class InteractiveInterface:
 
                 current_model = getattr(config, model_attr, "") or config.api_model
                 if models:
-                    print("\n📦 获取到可用模型：")
+                    if CURRENT_LANGUAGE == "en":
+                        print("\n📦 Available models:")
+                    else:
+                        print("\n📦 获取到可用模型：")
                     for i, mid in enumerate(models, 1):
                         print(f"  {i}. {mid}")
-                    model_choice = input(f"{label} 选择模型编号(1-{len(models)})，或直接输入模型名(回车保留当前 {current_model}): ").strip()
+                    if CURRENT_LANGUAGE == "en":
+                        model_choice = input(f"{label} Select model (1-{len(models)}), or enter name (Enter to keep {current_model}): ").strip()
+                    else:
+                        model_choice = input(f"{label} 选择模型编号(1-{len(models)})，或直接输入模型名(回车保留当前 {current_model}): ").strip()
                     if model_choice.isdigit():
                         idx = int(model_choice)
                         if 1 <= idx <= len(models):
@@ -2867,42 +4707,70 @@ class InteractiveInterface:
                     elif model_choice:
                         setattr(config, model_attr, model_choice)
                 else:
-                    print(f"\n⚠️  无法自动获取 {label} 的模型列表（该平台可能不支持 /models，或Key/网络问题）。")
-                    api_model_input = input(f"请输入 {label} 使用的模型名称 (当前: {current_model}): ").strip()
+                    if CURRENT_LANGUAGE == "en":
+                        print(f"\n⚠️  Cannot auto-fetch model list for {label} (platform may not support /models, or key/network issue).")
+                        api_model_input = input(f"Enter model name for {label} (Current: {current_model}): ").strip()
+                    else:
+                        print(f"\n⚠️  无法自动获取 {label} 的模型列表（该平台可能不支持 /models，或Key/网络问题）。")
+                        api_model_input = input(f"请输入 {label} 使用的模型名称 (当前: {current_model}): ").strip()
                     if api_model_input:
                         setattr(config, model_attr, api_model_input)
 
             # 若至少有一个AI使用API，则认为API模式开启
             config.api_mode_enabled = any_use_api
             if not any_use_api:
-                print("⚠️  所有AI都未配置使用API，将关闭API模式，仅使用本地Ollama。")
+                if CURRENT_LANGUAGE == "en":
+                    print("⚠️  No AI configured to use API, disabling API mode, using local Ollama only.")
+                else:
+                    print("⚠️  所有AI都未配置使用API，将关闭API模式，仅使用本地Ollama。")
 
             # 保存配置
             config.save_to_file("macp_config.json")
-            print("✅ API配置已保存")
+            if CURRENT_LANGUAGE == "en":
+                print("✅ API configuration saved")
+            else:
+                print("✅ API配置已保存")
 
             # 重新初始化调度器以应用新配置
-            print("\n🔄 正在重新初始化系统...")
+            if CURRENT_LANGUAGE == "en":
+                print("\n🔄 Reinitializing system...")
+            else:
+                print("\n🔄 正在重新初始化系统...")
             try:
                 # 重新创建调度器实例
                 new_scheduler = AICouncilScheduler()
                 self.scheduler = new_scheduler
-                print("✅ 系统重新初始化完成")
+                if CURRENT_LANGUAGE == "en":
+                    print("✅ System reinitialized successfully")
+                else:
+                    print("✅ 系统重新初始化完成")
             except (AICouncilException, requests.exceptions.RequestException, ValueError) as e:
-                print(f"❌ 重新初始化失败: {e}")
+                if CURRENT_LANGUAGE == "en":
+                    print(f"❌ Reinitialization failed: {e}")
+                else:
+                    print(f"❌ 重新初始化失败: {e}")
 
         else:
             config.api_mode_enabled = False
-            print("✅ 已禁用API模式")
+            if CURRENT_LANGUAGE == "en":
+                print("✅ API mode disabled")
+            else:
+                print("✅ 已禁用API模式")
 
         DisplayManager.print_separator()
 
     def _exit_program(self):
         """退出程序"""
-        print(f"\n📊 会话统计：")
-        print(f"  会话ID：{self.scheduler.session_id}")
-        print(f"  总记录数：{len(self.scheduler.history_manager.history)}")
-        print("\n👋 再见！")
+        if CURRENT_LANGUAGE == "en":
+            print(f"\n📊 Session Statistics:")
+            print(f"  Session ID: {self.scheduler.session_id}")
+            print(f"  Total Records: {len(self.scheduler.history_manager.history)}")
+            print("\n👋 Goodbye!")
+        else:
+            print(f"\n📊 会话统计：")
+            print(f"  会话ID：{self.scheduler.session_id}")
+            print(f"  总记录数：{len(self.scheduler.history_manager.history)}")
+            print("\n👋 再见！")
 
         # 清理资源
         self.scheduler.cleanup()
