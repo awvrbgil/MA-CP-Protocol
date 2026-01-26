@@ -2812,33 +2812,22 @@ class AICouncilScheduler:
         question_type = question_analysis["type"]
         
         # 显示问题类型分析
-        if CURRENT_LANGUAGE == "en":
-            type_labels = {"factual": "Factual (High Accuracy)", "philosophical": "Philosophical (Open Discussion)", "mixed": "Mixed"}
-            print(f"🔍 Question Type: {type_labels.get(question_type, question_type)}")
-            if accuracy_required:
-                print("⚠️ Accuracy Mode: AI will correct factual errors in the question")
-        else:
-            type_labels = {"factual": "事实类（高准确度）", "philosophical": "哲学类（开放讨论）", "mixed": "混合类"}
-            print(f"🔍 问题类型: {type_labels.get(question_type, question_type)}")
-            if accuracy_required:
-                print("⚠️ 准确度模式: AI会纠正问题中的事实错误")
+        type_labels = {
+            "factual": "事实类/Factual（高准确度/High Accuracy）", 
+            "philosophical": "哲学类/Philosophical（开放讨论/Open Discussion）", 
+            "mixed": "混合类/Mixed"
+        }
+        print(f"🔍 问题类型 (Question Type): {type_labels.get(question_type, question_type)}")
+        if accuracy_required:
+            print("⚠️ 准确度模式 (Accuracy Mode): AI会纠正问题中的事实错误 (AI will correct factual errors)")
 
         # 第一回合：双方知道对手是谁，但看不到具体观点
         DisplayManager.print_separator("-", 40)
-        if CURRENT_LANGUAGE == "en":
-            print("Round 1: Opening Statement")
-        else:
-            print("第1回合：初始陈述")
+        print("第1回合：初始陈述 (Round 1: Opening Statement)")
         DisplayManager.print_separator("-", 40)
-        if CURRENT_LANGUAGE == "en":
-            print(f"💡 {role1} vs {role2} - Both sides know opponent's identity")
-        else:
-            print(f"💡 {role1} vs {role2} - 双方已知晓对手身份")
+        print(f"💡 {role1} vs {role2} - 双方已知晓对手身份 (Both sides know opponent)")
         if is_api1 or is_api2:
-            if CURRENT_LANGUAGE == "en":
-                print(f"🌐 Using models: {actual_model1} | {actual_model2}")
-            else:
-                print(f"🌐 使用模型: {actual_model1} | {actual_model2}")
+            print(f"🌐 使用模型 (Using models): {actual_model1} | {actual_model2}")
 
         # 根据问题类型选择附加提示词
         if CURRENT_LANGUAGE == "en":
@@ -3184,27 +3173,64 @@ Please respond concisely (key points only, max 300 words):
 
     def _generate_consensus_summary(self, question: str, debate_round: List[Dict[str, Any]],
                                    role1: str, role2: str, consensus_analysis: str) -> str:
-        """生成辩论共识总结报告
+        """生成辩论共识总结报告（流式输出）
 
         当辩论达到共识阈值时，调用协调AI生成专业的总结报告：
         1. 整理完整的辩论过程和共识分析结果
         2. 要求AI生成结构化的总结报告
-        3. 包含辩论回顾、共识评估、双方观点对比和综合结论
+        3. 必须包含至少2点共识和2点分歧
 
         这是MACP系统的核心价值之一，能够将AI辩论转化为
         有价值的分析报告，帮助用户深入理解辩论主题
         """
         if CURRENT_LANGUAGE == "en":
             print(f"\n🤖 Coordinator AI ({self.config.coordinator_model}) generating final summary...")
+            print("📝 Summary: ", end="", flush=True)
         else:
             print(f"\n🤖 协调AI ({self.config.coordinator_model}) 正在生成最终总结...")
+            print("📝 总结: ", end="", flush=True)
 
         # 构建辩论摘要
         debate_summary = ""
         for entry in debate_round[-6:]:  # 最后6轮对话
             debate_summary += f"\n{entry['speaker']}: {entry.get('content', '')[:200]}"
 
-        summary_prompt = f"""基于以下辩论过程和共识分析，请生成最终总结报告：
+        # 根据语言选择提示词
+        if CURRENT_LANGUAGE == "en":
+            summary_prompt = f"""Based on the following debate process and consensus analysis, please generate a final summary report:
+
+【Debate Topic】: {question}
+【Debate Parties】: {role1} vs {role2}
+【Consensus Analysis】: {consensus_analysis}
+
+【Debate Summary】:
+{debate_summary}
+
+Please generate a structured summary report that MUST include:
+
+## 🎯 Debate Summary
+
+### 📊 Consensus Points (MUST list at least 2 points)
+1. [First consensus point]
+2. [Second consensus point]
+(More if applicable)
+
+### ⚔️ Disagreement Points (MUST list at least 2 points)  
+1. [First disagreement point]
+2. [Second disagreement point]
+(More if applicable)
+
+### 🗣️ Position Comparison
+- {role1}'s core position
+- {role2}'s core position
+
+### 💡 Comprehensive Conclusion
+- Final answer to the original question
+- Constructive suggestions
+
+Please ensure the summary is objective and neutral."""
+        else:
+            summary_prompt = f"""基于以下辩论过程和共识分析，请生成最终总结报告：
 
 【辩论主题】: {question}
 【辩论双方】: {role1} vs {role2}
@@ -3213,95 +3239,169 @@ Please respond concisely (key points only, max 300 words):
 【辩论过程摘要】:
 {debate_summary}
 
-请生成结构化的总结报告，包含：
+请生成结构化的总结报告，【必须】包含：
 
 ## 🎯 辩论总结
 
-### 📊 共识评估
-- 最终共识度：XX%
-- 达成共识的主要方面
-- 仍存在的分歧点
+### 📊 共识点（【必须】列出至少2点）
+1. [第一个共识点]
+2. [第二个共识点]
+（如有更多可继续列出）
 
-### 🗣️ 双方观点对比
+### ⚔️ 分歧点（【必须】列出至少2点）
+1. [第一个分歧点]
+2. [第二个分歧点]
+（如有更多可继续列出）
+
+### 🗣️ 双方立场对比
 - {role1}的核心立场
 - {role2}的核心立场
-- 双方观点的演变过程
 
 ### 💡 综合结论
 - 对原问题的最终答案
 - 建设性建议和解决方案
 
-### 📈 辩论质量评估
-- 论证逻辑性
-- 观点深度
-- 沟通有效性
-
 请确保总结客观、中立，并基于双方的实际论述。"""
 
         coord_client, coord_model, is_api = self._get_client_for_model(self.config.coordinator_model)
+        
+        # 使用流式输出
         if is_api:
-            summary_result = coord_client.generate_response(summary_prompt, max_tokens=1000, temperature=self.config.temperature)
+            # API模式的流式输出
+            summary_result = coord_client.generate_response(
+                summary_prompt, 
+                max_tokens=1200, 
+                temperature=self.config.temperature,
+                streaming=True
+            )
+            summary = summary_result.get("response", "")
         else:
-            summary_result = coord_client.generate_response(coord_model, summary_prompt, max_tokens=1000,
-                                                          temperature=self.config.temperature, timeout=self.config.timeout,
-                                                          streaming=False)
-
-        if summary_result.get("success"):
+            # Ollama模式的流式输出
+            summary_result = coord_client._generate_streaming_response(
+                coord_model, 
+                summary_prompt, 
+                max_tokens=1200,
+                temperature=self.config.temperature, 
+                timeout=self.config.timeout,
+                speaker_name="📝 总结" if CURRENT_LANGUAGE == "zh" else "📝 Summary"
+            )
             summary = summary_result.get("response", "")
 
-            if not summary.strip():
-                print("⚠️  共识总结AI返回了空响应")
-                return f"基于共识分析的总结：{consensus_analysis}\n\n辩论已自动结束，双方达成高度共识。"
-
-            print(f"\n✅ 共识总结生成完成：")
-            print(summary[:self.config.display_length] +
-                  ("..." if len(summary) > self.config.display_length else ""))
+        print()  # 换行
+        
+        if summary_result.get("success") and summary.strip():
+            if CURRENT_LANGUAGE == "en":
+                print(f"\n✅ Summary generation complete")
+            else:
+                print(f"\n✅ 总结生成完成")
             return summary
         else:
-            print(f"❌ 共识总结生成失败")
+            if CURRENT_LANGUAGE == "en":
+                print(f"❌ Summary generation failed")
+            else:
+                print(f"❌ 总结生成失败")
             return f"基于共识分析的总结：{consensus_analysis}\n\n辩论已自动结束，双方达成高度共识。"
 
     def _coordinate_responses(self, question: str, debate_round: List[Dict[str, Any]],
                             role1: str, role2: str) -> str:
-        """协调辩论结果"""
-        print(f"\n🤖 协调AI ({self.config.coordinator_model}) 正在分析...")
+        """协调辩论结果（流式输出）"""
+        if CURRENT_LANGUAGE == "en":
+            print(f"\n🤖 Coordinator AI ({self.config.coordinator_model}) analyzing...")
+            print("📝 Analysis: ", end="", flush=True)
+        else:
+            print(f"\n🤖 协调AI ({self.config.coordinator_model}) 正在分析...")
+            print("📝 分析: ", end="", flush=True)
 
         # 构建摘要
         debate_summary = ""
-        for entry in debate_round[:4]:  # 只取前4轮
-            debate_summary += f"\n{entry['speaker']}: {entry.get('content', '')[:150]}"
+        for entry in debate_round:  # 取全部辩论内容
+            debate_summary += f"\n{entry['speaker']}: {entry.get('content', '')[:200]}"
 
-        coord_prompt = f"""请作为中立协调员分析以下辩论：
+        # 根据语言选择提示词
+        if CURRENT_LANGUAGE == "en":
+            coord_prompt = f"""Please analyze the following debate as a neutral coordinator:
+
+Topic: {question}
+Debate Parties: {role1} vs {role2}
+Debate Summary: {debate_summary}
+
+Please provide a structured analysis that MUST include:
+
+### 📊 Consensus Points (MUST list at least 2 points)
+1. [First consensus point - what both sides agree on]
+2. [Second consensus point]
+(More if applicable)
+
+### ⚔️ Disagreement Points (MUST list at least 2 points)
+1. [First disagreement point - where they differ]
+2. [Second disagreement point]
+(More if applicable)
+
+### 💡 Comprehensive Suggestion
+- Your neutral recommendation to the user
+- How to think about this issue
+
+Please be objective and balanced in your analysis."""
+        else:
+            coord_prompt = f"""请作为中立协调员分析以下辩论：
+
 问题：{question}
 辩论双方：{role1} vs {role2}
 辩论摘要：{debate_summary}
 
-请提供简要分析（限{self.config.max_tokens}token）：
-1. 核心共识点
-2. 主要分歧
-3. 综合建议"""
+请提供结构化分析，【必须】包含：
+
+### 📊 共识点（【必须】列出至少2点）
+1. [第一个共识点 - 双方都同意的观点]
+2. [第二个共识点]
+（如有更多可继续列出）
+
+### ⚔️ 分歧点（【必须】列出至少2点）
+1. [第一个分歧点 - 双方的不同观点]
+2. [第二个分歧点]
+（如有更多可继续列出）
+
+### 💡 综合建议
+- 给用户的中立建议
+- 如何看待这个问题
+
+请保持客观、中立的立场进行分析。"""
 
         coord_client, coord_model, is_api = self._get_client_for_model(self.config.coordinator_model)
+        
+        # 使用流式输出
         if is_api:
-            coord_result = coord_client.generate_response(coord_prompt, max_tokens=800, temperature=self.config.temperature)
+            coord_result = coord_client.generate_response(
+                coord_prompt, 
+                max_tokens=1000, 
+                temperature=self.config.temperature,
+                streaming=True
+            )
+            coord_response = coord_result.get("response", "")
         else:
-            coord_result = coord_client.generate_response(coord_model, coord_prompt, max_tokens=800,
-                                                        temperature=self.config.temperature, timeout=self.config.timeout,
-                                                        streaming=False)
-
-        if coord_result.get("success"):
+            coord_result = coord_client._generate_streaming_response(
+                coord_model, 
+                coord_prompt, 
+                max_tokens=1000,
+                temperature=self.config.temperature, 
+                timeout=self.config.timeout,
+                speaker_name="📝 分析" if CURRENT_LANGUAGE == "zh" else "📝 Analysis"
+            )
             coord_response = coord_result.get("response", "")
 
-            if not coord_response.strip():
-                print("⚠️  协调AI返回了空响应")
-                return "协调AI返回了空响应，请检查模型配置"
+        print()  # 换行
 
-            print(f"\n✅ 协调AI分析完成：")
-            print(coord_response[:self.config.display_length] +
-                  ("..." if len(coord_response) > self.config.display_length else ""))
+        if coord_result.get("success") and coord_response.strip():
+            if CURRENT_LANGUAGE == "en":
+                print(f"\n✅ Coordinator analysis complete")
+            else:
+                print(f"\n✅ 协调AI分析完成")
             return coord_response
         else:
-            print(f"❌ 协调AI分析失败")
+            if CURRENT_LANGUAGE == "en":
+                print(f"❌ Coordinator analysis failed")
+            else:
+                print(f"❌ 协调AI分析失败")
             return f"协调分析失败"
 
     # ==================== 【海龟汤模式】 ====================
@@ -3661,6 +3761,358 @@ Please respond concisely (key points only, max 300 words):
 
         print(f"🎭 辩论角色: {role1} vs {role2}")
 
+    def competition_debate(self, question: str, role1: str = None, role2: str = None, rounds: int = 3) -> List[Dict[str, Any]]:
+        """辩论赛模式 - 双方对抗，最后由裁判判定胜负
+        
+        与普通辩论模式不同：
+        1. 普通辩论模式：寻求共识，达成一致结论
+        2. 辩论赛模式：对抗辩论，最后判定谁赢谁输
+        
+        流程：
+        1. 双方进行指定回合数的辩论
+        2. 协调AI作为裁判进行评判
+        3. 判定胜负并给出理由
+        4. 总结共识点和分歧点
+        """
+        role1 = role1 or self.config.default_role_1
+        role2 = role2 or self.config.default_role_2
+
+        # 获取客户端和模型
+        client1, model_id1, is_api1 = self._get_client_for_model(self.config.model_1)
+        client2, model_id2, is_api2 = self._get_client_for_model(self.config.model_2)
+
+        actual_model1 = model_id1 if is_api1 else self.config.model_1
+        actual_model2 = model_id2 if is_api2 else self.config.model_2
+        display_name1 = f"{actual_model1}-{role1}"
+        display_name2 = f"{actual_model2}-{role2}"
+
+        role_prompt1 = role_system.get_role_prompt(role1, is_first=True)
+        role_prompt2 = role_system.get_role_prompt(role2, is_first=False)
+
+        if not role_prompt1 or not role_prompt2:
+            raise InvalidRoleError(f"无效角色: {role1} 或 {role2}")
+
+        debate_round = []
+
+        # 分析问题类型
+        question_analysis = analyze_question_type(question)
+        accuracy_required = question_analysis["accuracy_required"]
+        
+        if CURRENT_LANGUAGE == "en":
+            mode_instruction = ANTI_HALLUCINATION_PROMPT_EN if accuracy_required else PHILOSOPHICAL_PROMPT_EN
+        else:
+            mode_instruction = ANTI_HALLUCINATION_PROMPT_ZH if accuracy_required else PHILOSOPHICAL_PROMPT_ZH
+
+        if CURRENT_LANGUAGE == "en":
+            print(f"\n🏆 Competition Mode: {role1} (Pro) vs {role2} (Con)")
+            print(f"📋 Proposition: {question}")
+            print(f"⏱️ Rounds: {rounds}")
+        else:
+            print(f"\n🏆 辩论赛模式 (Competition Mode)：{role1}（正方/Pro） vs {role2}（反方/Con）")
+            print(f"📋 辩题 (Proposition)：{question}")
+            print(f"⏱️ 回合数 (Rounds)：{rounds}")
+
+        # 第一回合：开场陈述
+        DisplayManager.print_separator("-", 40)
+        print("第1回合：开场陈述 (Round 1: Opening Statements)")
+        DisplayManager.print_separator("-", 40)
+
+        # 正方开场 - 始终使用中英双语提示词让AI用英文回答
+        lang_instruction = "\n**IMPORTANT: You MUST respond entirely in English.**\n"
+        prompt1 = f"""{role_prompt1}
+{lang_instruction}
+{mode_instruction}
+
+【Competition Debate / 辩论赛】
+Proposition / 辩题: {question}
+
+You are the PRO side. You must SUPPORT this proposition.
+你是正方。你必须【支持】这个命题。
+Please present your opening statement with 3-5 key arguments.
+Be persuasive and logical. You will be judged on the strength of your arguments."""
+
+        print(f"\n📢 {display_name1}（正方/Pro）：", end="", flush=True)
+        
+        if is_api1:
+            result1 = client1.generate_response(prompt1, streaming=True)
+        else:
+            result1 = client1._generate_streaming_response(
+                model_id1, prompt1, timeout=self.config.timeout,
+                speaker_name=f"{display_name1}（正方）" if CURRENT_LANGUAGE == "zh" else f"{display_name1} (Pro)"
+            )
+        
+        response1 = result1.get("response", "")
+        debate_round.append({"round": 1, "speaker": display_name1, "content": response1, "type": "opening", "side": "pro"})
+        print()
+
+        # 反方开场 - 始终使用中英双语提示词让AI用英文回答
+        prompt2 = f"""{role_prompt2}
+{lang_instruction}
+{mode_instruction}
+
+【Competition Debate / 辩论赛】
+Proposition / 辩题: {question}
+
+You are the CON side. You must OPPOSE this proposition.
+你是反方。你必须【反对】这个命题。
+The PRO side argued / 正方的论点: {response1[:500]}...
+
+Please present your opening statement with 3-5 key arguments.
+Be persuasive and logical. You will be judged on the strength of your arguments."""
+
+        print(f"\n📢 {display_name2}（反方/Con）：", end="", flush=True)
+        
+        if is_api2:
+            result2 = client2.generate_response(prompt2, streaming=True)
+        else:
+            result2 = client2._generate_streaming_response(
+                model_id2, prompt2, timeout=self.config.timeout,
+                speaker_name=f"{display_name2}（反方）" if CURRENT_LANGUAGE == "zh" else f"{display_name2} (Con)"
+            )
+        
+        response2 = result2.get("response", "")
+        debate_round.append({"round": 1, "speaker": display_name2, "content": response2, "type": "opening", "side": "con"})
+        print()
+
+        # 后续回合：反驳
+        for round_num in range(2, rounds + 1):
+            DisplayManager.print_separator("-", 40)
+            if CURRENT_LANGUAGE == "en":
+                print(f"Round {round_num}: Rebuttal")
+            else:
+                print(f"第{round_num}回合：反驳")
+            DisplayManager.print_separator("-", 40)
+
+            # 正方反驳
+            last_con_response = debate_round[-1]["content"] if debate_round[-1]["side"] == "con" else response2
+            
+            if CURRENT_LANGUAGE == "en":
+                rebuttal_prompt1 = f"""{role_prompt1}
+{lang_instruction}
+
+【Competition Debate - Round {round_num}】
+Proposition: {question}
+You are PRO side.
+
+CON side's argument: {last_con_response[:600]}...
+
+Please rebut the CON side's arguments and strengthen your position.
+Point out flaws in their logic, provide counter-evidence, and reinforce your core arguments."""
+            else:
+                rebuttal_prompt1 = f"""{role_prompt1}
+
+【辩论赛 - 第{round_num}回合】
+辩题：{question}
+你是正方。
+
+反方的论点：{last_con_response[:600]}...
+
+请反驳反方的论点并强化你的立场。
+指出对方的逻辑漏洞，提供反证，并强化你的核心论点。"""
+
+            print(f"\n📢 {display_name1}（正方）反驳：", end="", flush=True)
+            
+            if is_api1:
+                result1 = client1.generate_response(rebuttal_prompt1, streaming=True)
+            else:
+                result1 = client1._generate_streaming_response(
+                    model_id1, rebuttal_prompt1, timeout=self.config.timeout,
+                    speaker_name=f"{display_name1} 反驳" if CURRENT_LANGUAGE == "zh" else f"{display_name1} Rebuttal"
+                )
+            
+            response1 = result1.get("response", "")
+            debate_round.append({"round": round_num, "speaker": display_name1, "content": response1, "type": "rebuttal", "side": "pro"})
+            print()
+
+            # 反方反驳
+            if CURRENT_LANGUAGE == "en":
+                rebuttal_prompt2 = f"""{role_prompt2}
+{lang_instruction}
+
+【Competition Debate - Round {round_num}】
+Proposition: {question}
+You are CON side.
+
+PRO side's argument: {response1[:600]}...
+
+Please rebut the PRO side's arguments and strengthen your position.
+Point out flaws in their logic, provide counter-evidence, and reinforce your core arguments."""
+            else:
+                rebuttal_prompt2 = f"""{role_prompt2}
+
+【辩论赛 - 第{round_num}回合】
+辩题：{question}
+你是反方。
+
+正方的论点：{response1[:600]}...
+
+请反驳正方的论点并强化你的立场。
+指出对方的逻辑漏洞，提供反证，并强化你的核心论点。"""
+
+            print(f"\n📢 {display_name2}（反方）反驳：", end="", flush=True)
+            
+            if is_api2:
+                result2 = client2.generate_response(rebuttal_prompt2, streaming=True)
+            else:
+                result2 = client2._generate_streaming_response(
+                    model_id2, rebuttal_prompt2, timeout=self.config.timeout,
+                    speaker_name=f"{display_name2} 反驳" if CURRENT_LANGUAGE == "zh" else f"{display_name2} Rebuttal"
+                )
+            
+            response2 = result2.get("response", "")
+            debate_round.append({"round": round_num, "speaker": display_name2, "content": response2, "type": "rebuttal", "side": "con"})
+            print()
+
+        # 裁判评判
+        DisplayManager.print_separator("=", 60)
+        if CURRENT_LANGUAGE == "en":
+            print("🏛️ JUDGE'S VERDICT")
+        else:
+            print("🏛️ 裁判评判")
+        DisplayManager.print_separator("=", 60)
+        
+        self._judge_competition(question, debate_round, role1, role2, display_name1, display_name2)
+
+        # 询问是否保存
+        self._ask_save_debate_log(question, debate_round, display_name1, display_name2)
+
+        return debate_round
+
+    def _judge_competition(self, question: str, debate_round: List[Dict[str, Any]], 
+                          role1: str, role2: str, display_name1: str, display_name2: str):
+        """裁判AI评判辩论赛胜负（流式输出）"""
+        if CURRENT_LANGUAGE == "en":
+            print(f"\n🤖 Judge ({self.config.coordinator_model}) evaluating...")
+            print("⚖️ Verdict: ", end="", flush=True)
+        else:
+            print(f"\n🤖 裁判AI ({self.config.coordinator_model}) 正在评判...")
+            print("⚖️ 评判: ", end="", flush=True)
+
+        # 构建辩论摘要
+        debate_summary = ""
+        for entry in debate_round:
+            side = "Pro" if entry["side"] == "pro" else "Con"
+            debate_summary += f"\n【{side} - Round {entry['round']}】 {entry['speaker']}:\n{entry['content'][:300]}...\n"
+
+        # 构建裁判提示词
+        if CURRENT_LANGUAGE == "en":
+            judge_prompt = f"""You are an impartial debate judge. Please evaluate the following debate competition:
+
+【Proposition】: {question}
+【PRO Side】: {display_name1}
+【CON Side】: {display_name2}
+
+【Debate Record】:
+{debate_summary}
+
+Please provide your verdict with the following structure:
+
+## 🏆 Winner Announcement
+**Winner: [PRO/CON side]** - [One sentence reason]
+
+## 📊 Scoring (out of 10 for each)
+| Criterion | PRO | CON |
+|-----------|-----|-----|
+| Argument Strength | X | X |
+| Logic Rigor | X | X |
+| Rebuttal Effectiveness | X | X |
+| Evidence Quality | X | X |
+| **Total** | XX | XX |
+
+## 🤝 Consensus Points (MUST list at least 2)
+1. [First point both sides agree on]
+2. [Second point both sides agree on]
+
+## ⚔️ Key Disagreements (MUST list at least 2)
+1. [First major disagreement]
+2. [Second major disagreement]
+
+## 💬 Judge's Comments
+- PRO side's strengths and weaknesses
+- CON side's strengths and weaknesses
+- Key moments that influenced the verdict
+
+## 💡 Final Recommendation
+- Your neutral perspective on the proposition
+- Advice for the user on this topic
+
+Please be fair and objective in your judgment."""
+        else:
+            judge_prompt = f"""你是一位公正的辩论赛裁判。请评判以下辩论赛：
+
+【辩题】：{question}
+【正方】：{display_name1}
+【反方】：{display_name2}
+
+【辩论记录】：
+{debate_summary}
+
+请按以下结构给出你的裁决：
+
+## 🏆 胜负宣布
+**获胜方：[正方/反方]** - [一句话理由]
+
+## 📊 评分（每项满分10分）
+| 评判项 | 正方 | 反方 |
+|--------|------|------|
+| 论点强度 | X | X |
+| 逻辑严谨 | X | X |
+| 反驳有效性 | X | X |
+| 论据质量 | X | X |
+| **总分** | XX | XX |
+
+## 🤝 共识点（【必须】列出至少2点）
+1. [双方都认同的第一个观点]
+2. [双方都认同的第二个观点]
+
+## ⚔️ 核心分歧（【必须】列出至少2点）
+1. [第一个主要分歧]
+2. [第二个主要分歧]
+
+## 💬 裁判点评
+- 正方的优点与不足
+- 反方的优点与不足
+- 影响裁决的关键时刻
+
+## 💡 最终建议
+- 你对这个辩题的中立看法
+- 给用户关于这个问题的建议
+
+请保持公正客观的态度进行裁决。"""
+
+        coord_client, coord_model, is_api = self._get_client_for_model(self.config.coordinator_model)
+        
+        # 使用流式输出
+        if is_api:
+            judge_result = coord_client.generate_response(
+                judge_prompt, 
+                max_tokens=1500, 
+                temperature=0.7,
+                streaming=True
+            )
+        else:
+            judge_result = coord_client._generate_streaming_response(
+                coord_model, 
+                judge_prompt, 
+                max_tokens=1500,
+                temperature=0.7, 
+                timeout=self.config.timeout,
+                speaker_name="⚖️ 裁决" if CURRENT_LANGUAGE == "zh" else "⚖️ Verdict"
+            )
+
+        print()  # 换行
+        
+        if judge_result.get("success"):
+            if CURRENT_LANGUAGE == "en":
+                print(f"\n✅ Judgment complete")
+            else:
+                print(f"\n✅ 评判完成")
+        else:
+            if CURRENT_LANGUAGE == "en":
+                print(f"\n❌ Judgment failed")
+            else:
+                print(f"\n❌ 评判失败")
+
     def cleanup(self):
         """清理资源"""
         if self.config.save_history:
@@ -3700,13 +4152,14 @@ class InteractiveInterface:
         if NEED_API_SETUP:
             print("\n" + "=" * 60)
             print("🌐 检测到您选择了 API 模式，现在开始配置")
+            print("   (Detected API mode selection, starting configuration)")
             print("=" * 60)
             self._configure_api_mode()
             NEED_API_SETUP = False
 
         while True:
             try:
-                user_input = input(f"\n{get_text('input_prompt')}").strip()
+                user_input = input(f"\n📝 请输入问题或命令 (Enter question or command)：").strip()
 
                 if not user_input:
                     continue
@@ -3720,23 +4173,17 @@ class InteractiveInterface:
                 self._handle_interrupt()
             except Exception as e:
                 logger.error(f"发生错误：{e}")
-                print(f"❌ 发生错误：{e}")
+                print(f"❌ 发生错误 (Error occurred)：{e}")
 
     @staticmethod
     def _print_welcome():
-        """打印欢迎信息"""
-        if CURRENT_LANGUAGE == "en":
-            DisplayManager.print_header("🤖 MACP Multi-AI Collaboration Platform v5.0")
-            print(f"Model 1: {config.model_1}")
-            print(f"Model 2: {config.model_2}")
-            print(f"Coordinator: {config.coordinator_model}")
-            print(f"Optimize Mode: {'Enabled' if config.optimize_memory else 'Disabled'}")
-        else:
-            DisplayManager.print_header("🤖 MACP 多AI协作平台 v5.0")
-            print(f"模型1：{config.model_1}")
-            print(f"模型2：{config.model_2}")
-            print(f"协调模型：{config.coordinator_model}")
-            print(f"优化模式：{'开启' if config.optimize_memory else '关闭'}")
+        """打印欢迎信息 (Print welcome message)"""
+        DisplayManager.print_header("🤖 MACP 多AI协作平台 (Multi-AI Collaboration Platform) v5.0")
+        print(f"模型1 (Model 1)：{config.model_1}")
+        print(f"模型2 (Model 2)：{config.model_2}")
+        print(f"协调模型 (Coordinator)：{config.coordinator_model}")
+        opt_status = "开启/Enabled" if config.optimize_memory else "关闭/Disabled"
+        print(f"优化模式 (Optimize Mode)：{opt_status}")
         DisplayManager.print_separator()
 
     @staticmethod
@@ -3744,77 +4191,46 @@ class InteractiveInterface:
         """打印可用命令"""
         print(f"\n{get_text('available_commands')}")
         
-        # 根据当前语言选择命令描述
-        if CURRENT_LANGUAGE == "en":
-            commands = [
-                ("help", "Show help"),
-                ("models", "View available models"),
-                ("config", "View current config"),
-                ("history", "View history"),
-                ("api", "Configure API mode"),
-                ("debate", "Enter debate mode"),
-                ("turtle", "Enter turtle soup mode"),
-                ("consensus", "Configure consensus detection"),
-                ("streaming", "Toggle streaming output"),
-                ("optimize", "Enable optimize mode"),
-                ("roles", "View available roles"),
-                ("tags", "View tag system"),
-                ("mode", "Switch coordination mode (auto/user)"),
-                ("addai", "Add new AI model (local/API)"),
-                ("listai", "List all AI models"),
-                ("removeai", "Remove an AI model"),
-                ("language", "Switch language / 切换语言"),
-                ("clear", "Clear screen"),
-                ("exit", "Exit program")
-            ]
-        else:
-            commands = [
-                ("help", "显示帮助"),
-                ("models", "查看可用模型"),
-                ("config", "查看当前配置"),
-                ("history", "查看历史记录"),
-                ("api", "配置API模式"),
-                ("debate", "进入辩论模式"),
-                ("turtle", "进入海龟汤模式"),
-                ("consensus", "配置共识检测"),
-                ("streaming", "切换流式输出模式"),
-                ("optimize", "开启优化模式"),
-                ("roles", "查看可用角色"),
-                ("tags", "查看标签系统"),
-                ("mode", "切换协调模式（auto/user）"),
-                ("addai", "添加新AI模型（本地/API）"),
-                ("listai", "列出所有AI模型"),
-                ("removeai", "移除AI模型"),
-                ("language", "切换语言 / Switch language"),
-                ("clear", "清屏"),
-                ("exit", "退出程序")
-            ]
+        # 命令列表（中英双语）
+        commands = [
+            ("help", "显示帮助 (Show help)"),
+            ("models", "查看可用模型 (View available models)"),
+            ("config", "查看当前配置 (View current config)"),
+            ("history", "查看历史记录 (View history)"),
+            ("api", "配置API模式 (Configure API mode)"),
+            ("debate", "辩论模式-寻求共识 (Debate mode - seek consensus)"),
+            ("competition", "辩论赛模式-判定胜负 (Competition - judge winner)"),
+            ("turtle", "海龟汤模式 (Turtle soup mode)"),
+            ("consensus", "配置共识检测 (Configure consensus detection)"),
+            ("streaming", "切换流式输出 (Toggle streaming output)"),
+            ("optimize", "开启优化模式 (Enable optimize mode)"),
+            ("roles", "查看可用角色 (View available roles)"),
+            ("tags", "查看标签系统 (View tag system)"),
+            ("mode", "切换协调模式 (Switch coordination mode)"),
+            ("addai", "添加新AI模型 (Add new AI model)"),
+            ("listai", "列出所有AI模型 (List all AI models)"),
+            ("removeai", "移除AI模型 (Remove AI model)"),
+            ("language", "切换语言 (Switch language)"),
+            ("clear", "清屏 (Clear screen)"),
+            ("exit", "退出程序 (Exit program)")
+        ]
 
         for cmd, desc in commands:
             print(f"  /{cmd:<12} - {desc}")
         DisplayManager.print_separator()
 
     def _handle_question(self, question: str):
-        """处理问题输入"""
-        if CURRENT_LANGUAGE == "en":
-            print(f"\n🔍 Processing question...")
-        else:
-            print(f"\n🔍 正在处理问题...")
+        """处理问题输入 (Handle question input)"""
+        print(f"\n🔍 正在处理问题 (Processing question)...")
         self.scheduler.progress_tracker.start()
 
         try:
             self.scheduler.ask_both_models(question, mode="parallel")
             total_time = self.scheduler.progress_tracker.get_elapsed_time()
-            if CURRENT_LANGUAGE == "en":
-                print(f"\n✅ Total time: {total_time:.2f}s")
-            else:
-                print(f"\n✅ 总耗时：{total_time:.2f}秒")
+            print(f"\n✅ 总耗时 (Total time)：{total_time:.2f}秒/s")
         except Exception as e:
             logger.error(f"处理问题失败: {e}")
-            if CURRENT_LANGUAGE == "en":
-                print(f"❌ Failed to process question: {e}")
-            else:
-                print(f"❌ 处理问题失败: {e}")
+            print(f"❌ 处理问题失败 (Failed to process question): {e}")
 
     def _handle_command(self, command: str):
         """处理命令"""
@@ -3827,6 +4243,7 @@ class InteractiveInterface:
             'history': self._show_history,
             'api': self._configure_api_mode,
             'debate': self._enter_debate_mode,
+            'competition': self._enter_competition_mode,
             'turtle': self._enter_turtle_soup_mode,
             'consensus': self._configure_consensus,
             'optimize': self._toggle_optimize_mode,
@@ -3848,28 +4265,25 @@ class InteractiveInterface:
                 handler()
             except Exception as e:
                 logger.error(f"执行命令 /{command} 失败: {e}")
-                print(f"❌ 执行命令失败: {e}")
+                print(f"❌ 执行命令失败 (Command execution failed): {e}")
         else:
-            print(f"❌ 未知命令：/{command}")
+            print(f"❌ 未知命令 (Unknown command)：/{command}")
 
     def _show_models(self):
-        """显示可用模型"""
-        print("\n📦 检查可用模型...")
+        """显示可用模型 (Show available models)"""
+        print("\n📦 检查可用模型 (Checking available models)...")
         models = self.scheduler.client.list_models()
         print(DisplayManager.format_model_list(models))
 
     @staticmethod
     def _show_config():
-        """显示当前配置"""
+        """显示当前配置 (Show current config)"""
         config_dict = config.to_dict()
         print(DisplayManager.format_config_display(config_dict))
 
     def _show_history(self):
-        """显示历史记录"""
-        if CURRENT_LANGUAGE == "en":
-            print(f"\n📜 History (Session ID: {self.scheduler.session_id}):")
-        else:
-            print(f"\n📜 历史记录（会话ID：{self.scheduler.session_id}）：")
+        """显示历史记录 (Show history)"""
+        print(f"\n📜 历史记录 (History) | 会话ID (Session ID)：{self.scheduler.session_id}")
         history = self.scheduler.history_manager.get_recent_history(5)
 
         if history:
@@ -3878,105 +4292,104 @@ class InteractiveInterface:
                 entry_type = entry.get('type', 'unknown')
                 question = entry.get('question', '')[:60]
                 print(f"\n  [{i}] {timestamp} - {entry_type}")
-                if CURRENT_LANGUAGE == "en":
-                    print(f"      Question: {question}...")
-                else:
-                    print(f"      问题：{question}...")
+                print(f"      问题 (Question)：{question}...")
         else:
-            if CURRENT_LANGUAGE == "en":
-                print("  No history records")
-            else:
-                print("  暂无历史记录")
+            print("  暂无历史记录 (No history records)")
 
     def _enter_debate_mode(self):
-        """进入辩论模式"""
-        if CURRENT_LANGUAGE == "en":
-            DisplayManager.print_header("💬 Debate Mode")
-            print("\nSelect coordination mode:")
-            print("  1. AI Auto-coordination (default)")
-            print("  2. User Manual coordination")
-            mode_choice = input("Select (1/2): ").strip()
-            if mode_choice == "2":
-                config.coordination_mode = "user"
-                print("✅ User coordination mode selected")
-            else:
-                config.coordination_mode = "auto"
-                print("✅ AI auto-coordination mode selected")
+        """进入辩论模式 (Enter debate mode)"""
+        DisplayManager.print_header("💬 辩论模式 (Debate Mode)")
+        print("\n选择协调模式 (Select coordination mode)：")
+        print("  1. AI自动协调 (AI Auto-coordination) [默认/default]")
+        print("  2. 用户手动协调 (User Manual coordination)")
+        mode_choice = input("选择/Select (1/2): ").strip()
+        if mode_choice == "2":
+            config.coordination_mode = "user"
+            print("✅ 已选择用户协调模式 (User coordination mode selected)")
         else:
-            DisplayManager.print_header("💬 辩论模式")
-            print("\n选择协调模式：")
-            print("  1. AI自动协调（默认）")
-            print("  2. 用户手动协调")
-            mode_choice = input("选择（1/2）: ").strip()
-            if mode_choice == "2":
-                config.coordination_mode = "user"
-                print("✅ 已选择用户协调模式")
-            else:
-                config.coordination_mode = "auto"
-                print("✅ 已选择AI自动协调模式")
+            config.coordination_mode = "auto"
+            print("✅ 已选择AI自动协调模式 (AI auto-coordination mode selected)")
 
         # 输入问题
-        if CURRENT_LANGUAGE == "en":
-            question = input("\nEnter debate topic: ").strip()
-            if not question:
-                print("❌ Topic cannot be empty")
-                return
-        else:
-            question = input("\n请输入辩论问题：").strip()
-            if not question:
-                print("❌ 问题不能为空")
-                return
+        question = input("\n请输入辩论问题 (Enter debate topic)：").strip()
+        if not question:
+            print("❌ 问题不能为空 (Topic cannot be empty)")
+            return
 
         # 选择角色
         role1, role2 = self._select_debate_roles()
 
         # 回合数
-        if CURRENT_LANGUAGE == "en":
-            rounds_input = input(f"\nDebate rounds (default:{config.debate_rounds}): ").strip()
-        else:
-            rounds_input = input(f"\n辩论回合数（默认:{config.debate_rounds}）: ").strip()
+        rounds_input = input(f"\n辩论回合数 (Debate rounds) [默认/default:{config.debate_rounds}]: ").strip()
         if rounds_input.isdigit():
             config.debate_rounds = int(rounds_input)
 
         # 开始辩论
-        if CURRENT_LANGUAGE == "en":
-            print(f"\n🎬 Starting debate: {role1} vs {role2}")
-            print(f"Topic: {question}")
-        else:
-            print(f"\n🎬 开始辩论：{role1} vs {role2}")
-            print(f"问题：{question}")
+        print(f"\n🎬 开始辩论 (Starting debate)：{role1} vs {role2}")
+        print(f"问题 (Topic)：{question}")
         DisplayManager.print_separator()
 
         self.scheduler.progress_tracker.start()
         try:
             self.scheduler.ask_both_models(question, mode="debate", role1=role1, role2=role2)
             total_time = self.scheduler.progress_tracker.get_elapsed_time()
-            if CURRENT_LANGUAGE == "en":
-                print(f"\n✅ Debate complete | Total time: {total_time:.2f}s")
-            else:
-                print(f"\n✅ 辩论完成 | 总耗时：{total_time:.2f}秒")
+            print(f"\n✅ 辩论完成 (Debate complete) | 总耗时 (Total time)：{total_time:.2f}秒/s")
         except Exception as e:
             logger.error(f"辩论失败: {e}")
-            if CURRENT_LANGUAGE == "en":
-                print(f"❌ Debate failed: {e}")
-            else:
-                print(f"❌ 辩论失败: {e}")
+            print(f"❌ 辩论失败 (Debate failed): {e}")
 
-    def _enter_turtle_soup_mode(self):
-        """进入海龟汤模式"""
-        DisplayManager.print_header("🐢 海龟汤模式")
+    def _enter_competition_mode(self):
+        """进入辩论赛模式 (Enter competition mode)"""
+        DisplayManager.print_header("🏆 辩论赛模式 (Competition Mode)")
+        print("\n🎯 在此模式下，AI双方将进行对抗辩论，最后由裁判AI判定胜负。")
+        print("   (In this mode, AI debaters will argue, and a judge will determine the winner.)")
+        print("这与普通辩论模式（寻求共识）不同。")
+        print("   (This is different from debate mode which seeks consensus.)\n")
 
-        question = input("\n请输入海龟汤谜面：").strip()
+        # 输入辩题
+        question = input("请输入辩论命题 (Enter debate proposition)：").strip()
         if not question:
-            print("❌ 谜面不能为空")
+            print("❌ 命题不能为空 (Proposition cannot be empty)")
             return
 
-        role1 = input("\nAI1角色（默认：侦探）: ").strip() or "侦探"
-        role2 = input("AI2角色（默认：推理者）: ").strip() or "推理者"
+        # 选择角色
+        role1, role2 = self._select_debate_roles()
 
-        print(f"\n🎮 开始海龟汤游戏")
-        print(f"谜面：{question}")
-        print(f"AI角色：{role1} 和 {role2}")
+        # 回合数
+        rounds_input = input(f"\n辩论回合数 (Debate rounds) [默认/default:3]: ").strip()
+        
+        rounds = int(rounds_input) if rounds_input.isdigit() else 3
+
+        # 开始辩论赛
+        print(f"\n🎬 开始辩论赛 (Starting competition)：{role1}（正方/Pro） vs {role2}（反方/Con）")
+        print(f"辩题 (Proposition)：{question}")
+        print(f"回合数 (Rounds)：{rounds}")
+        DisplayManager.print_separator()
+
+        self.scheduler.progress_tracker.start()
+        try:
+            self.scheduler.competition_debate(question, role1=role1, role2=role2, rounds=rounds)
+            total_time = self.scheduler.progress_tracker.get_elapsed_time()
+            print(f"\n✅ 辩论赛完成 (Competition complete) | 总耗时 (Total time)：{total_time:.2f}秒/s")
+        except Exception as e:
+            logger.error(f"辩论赛失败: {e}")
+            print(f"❌ 辩论赛失败 (Competition failed): {e}")
+
+    def _enter_turtle_soup_mode(self):
+        """进入海龟汤模式 (Enter turtle soup mode)"""
+        DisplayManager.print_header("🐢 海龟汤模式 (Turtle Soup Mode)")
+
+        question = input("\n请输入海龟汤谜面 (Enter riddle)：").strip()
+        if not question:
+            print("❌ 谜面不能为空 (Riddle cannot be empty)")
+            return
+
+        role1 = input("\nAI1角色 (AI1 role) [默认/default: 侦探/Detective]: ").strip() or "侦探"
+        role2 = input("AI2角色 (AI2 role) [默认/default: 推理者/Reasoner]: ").strip() or "推理者"
+
+        print(f"\n🎮 开始海龟汤游戏 (Starting Turtle Soup game)")
+        print(f"谜面 (Riddle)：{question}")
+        print(f"AI角色 (AI roles)：{role1} 和/and {role2}")
         DisplayManager.print_separator()
 
         try:
@@ -3987,27 +4400,18 @@ class InteractiveInterface:
 
     @staticmethod
     def _toggle_optimize_mode():
-        """切换优化模式"""
+        """切换优化模式 (Toggle optimize mode)"""
         config.optimize_memory = not config.optimize_memory
-        if CURRENT_LANGUAGE == "en":
-            status = "enabled" if config.optimize_memory else "disabled"
-            print(f"✅ Optimize mode {status}")
-        else:
-            status = "开启" if config.optimize_memory else "关闭"
-            print(f"✅ 优化模式已{status}")
+        status = "开启/Enabled" if config.optimize_memory else "关闭/Disabled"
+        print(f"✅ 优化模式 (Optimize mode)：{status}")
 
     @staticmethod
     def _toggle_streaming_mode():
-        """切换流式输出模式"""
+        """切换流式输出模式 (Toggle streaming mode)"""
         config.streaming_output = not config.streaming_output
-        if CURRENT_LANGUAGE == "en":
-            status = "enabled" if config.streaming_output else "disabled"
-            mode_desc = "AI responses will be displayed in real-time" if config.streaming_output else "AI responses will be displayed at once"
-            print(f"✅ Streaming output {status}")
-        else:
-            status = "开启" if config.streaming_output else "关闭"
-            mode_desc = "AI回答将逐字实时显示" if config.streaming_output else "AI回答将一次性显示"
-            print(f"✅ 流式输出已{status}")
+        status = "开启/Enabled" if config.streaming_output else "关闭/Disabled"
+        mode_desc = "AI回答将逐字实时显示 (Real-time display)" if config.streaming_output else "AI回答将一次性显示 (Display at once)"
+        print(f"✅ 流式输出 (Streaming output)：{status}")
         print(f"   {mode_desc}")
 
     @staticmethod
@@ -4393,123 +4797,109 @@ class InteractiveInterface:
 
     @staticmethod
     def _show_roles():
-        """显示可用角色"""
-        if CURRENT_LANGUAGE == "en":
-            print("\n🎭 Available roles (select by number):")
-        else:
-            print("\n🎭 可用角色（支持输入数字选择）：")
+        """显示可用角色 (Show available roles)"""
+        print("\n🎭 可用角色 (Available roles) [支持输入数字选择/Select by number]：")
         roles = role_system.get_all_roles()
         for i, role in enumerate(roles, 1):
             print(f"  {i}. {role}")
 
     @staticmethod
     def _show_tags():
-        """显示标签系统"""
-        print("\n🏷️  标签系统：")
+        """显示标签系统 (Show tag system)"""
+        print("\n🏷️  标签系统 (Tag System)：")
         for tag, roles in TAG_TO_ROLES.items():
             print(f"  {tag}: {', '.join(roles)}")
 
     @staticmethod
     def _configure_consensus():
-        """配置共识检测"""
-        print("\n🎯 共识检测配置")
-        print(f"当前设置：")
-        print(f"  - AI共识分析: {'开启' if config.ai_consensus_analysis else '关闭'}")
-        print(f"  - 自动总结: {'开启' if config.auto_summarize_at_threshold else '关闭'}")
-        print(f"  - 共识阈值: {int(config.consensus_threshold * 100)}%")
-        print(f"  - 检测起始回合: 第{config.consensus_check_start_round}回合")
+        """配置共识检测 (Configure consensus detection)"""
+        print("\n🎯 共识检测配置 (Consensus Detection Config)")
+        ai_status = "开启/On" if config.ai_consensus_analysis else "关闭/Off"
+        sum_status = "开启/On" if config.auto_summarize_at_threshold else "关闭/Off"
+        print(f"当前设置 (Current settings)：")
+        print(f"  - AI共识分析 (AI consensus analysis): {ai_status}")
+        print(f"  - 自动总结 (Auto summary): {sum_status}")
+        print(f"  - 共识阈值 (Consensus threshold): {int(config.consensus_threshold * 100)}%")
+        print(f"  - 检测起始回合 (Start round): {config.consensus_check_start_round}")
 
-        print(f"\n选项：")
-        print(f"  1. 切换AI共识分析 (当前: {'开' if config.ai_consensus_analysis else '关'})")
-        print(f"  2. 切换自动总结 (当前: {'开' if config.auto_summarize_at_threshold else '关'})")
-        print(f"  3. 设置共识阈值 (当前: {int(config.consensus_threshold * 100)}%)")
-        print(f"  4. 设置检测起始回合 (当前: {config.consensus_check_start_round})")
+        print(f"\n选项 (Options)：")
+        ai_cur = "开/On" if config.ai_consensus_analysis else "关/Off"
+        sum_cur = "开/On" if config.auto_summarize_at_threshold else "关/Off"
+        print(f"  1. 切换AI共识分析 (Toggle AI analysis) [当前/Current: {ai_cur}]")
+        print(f"  2. 切换自动总结 (Toggle auto summary) [当前/Current: {sum_cur}]")
+        print(f"  3. 设置共识阈值 (Set threshold) [当前/Current: {int(config.consensus_threshold * 100)}%]")
+        print(f"  4. 设置检测起始回合 (Set start round) [当前/Current: {config.consensus_check_start_round}]")
 
-        choice = input("选择 (1-4) 或回车返回: ").strip()
+        choice = input("选择/Select (1-4) 或回车返回/Enter to return: ").strip()
 
         if choice == '1':
             config.ai_consensus_analysis = not config.ai_consensus_analysis
-            status = "开启" if config.ai_consensus_analysis else "关闭"
-            print(f"✅ AI共识分析已{status}")
+            status = "开启/Enabled" if config.ai_consensus_analysis else "关闭/Disabled"
+            print(f"✅ AI共识分析 (AI consensus analysis)：{status}")
         elif choice == '2':
             config.auto_summarize_at_threshold = not config.auto_summarize_at_threshold
-            status = "开启" if config.auto_summarize_at_threshold else "关闭"
-            print(f"✅ 自动总结已{status}")
+            status = "开启/Enabled" if config.auto_summarize_at_threshold else "关闭/Disabled"
+            print(f"✅ 自动总结 (Auto summary)：{status}")
         elif choice == '3':
             try:
-                threshold = float(input("输入新阈值 (0-100): ").strip()) / 100.0
+                threshold = float(input("输入新阈值/Enter new threshold (0-100): ").strip()) / 100.0
                 if 0.0 <= threshold <= 1.0:
                     config.consensus_threshold = threshold
-                    print(f"✅ 共识阈值已设置为 {int(threshold * 100)}%")
+                    print(f"✅ 共识阈值已设置为 (Threshold set to) {int(threshold * 100)}%")
                 else:
-                    print("❌ 阈值必须在 0-100 之间")
+                    print("❌ 阈值必须在 0-100 之间 (Threshold must be 0-100)")
             except ValueError:
-                print("❌ 请输入有效的数字")
+                print("❌ 请输入有效的数字 (Please enter a valid number)")
         elif choice == '4':
             try:
-                round_num = int(input("输入起始回合数 (1-6): ").strip())
+                round_num = int(input("输入起始回合数/Enter start round (1-6): ").strip())
                 if 1 <= round_num <= 6:
                     config.consensus_check_start_round = round_num
-                    print(f"✅ 检测起始回合已设置为第{round_num}回合")
+                    print(f"✅ 检测起始回合已设置为第{round_num}回合 (Start round set to {round_num})")
                 else:
-                    print("❌ 回合数必须在 1-6 之间")
+                    print("❌ 回合数必须在 1-6 之间 (Round must be 1-6)")
             except ValueError:
-                print("❌ 请输入有效的数字")
+                print("❌ 请输入有效的数字 (Please enter a valid number)")
         elif choice == '':
             return
         else:
-            print("❌ 无效选择")
+            print("❌ 无效选择 (Invalid selection)")
 
     @staticmethod
     def _toggle_coordination_mode():
-        """切换协调模式"""
+        """切换协调模式 (Toggle coordination mode)"""
         current = config.coordination_mode
         new_mode = "user" if current == "auto" else "auto"
         config.coordination_mode = new_mode
-        if CURRENT_LANGUAGE == "en":
-            print(f"✅ Coordination mode switched: {current} -> {new_mode}")
-        else:
-            print(f"✅ 协调模式已切换：{current} -> {new_mode}")
+        print(f"✅ 协调模式已切换 (Coordination mode switched)：{current} -> {new_mode}")
 
     def _handle_interrupt(self):
-        """处理中断信号"""
-        if CURRENT_LANGUAGE == "en":
-            print("\n\n⚠️ Interrupt signal detected")
-            choice = input("Exit program? (y/N): ").strip().lower()
-        else:
-            print("\n\n⚠️ 检测到中断信号")
-            choice = input("是否退出程序？（y/N）: ").strip().lower()
+        """处理中断信号 (Handle interrupt signal)"""
+        print("\n\n⚠️ 检测到中断信号 (Interrupt signal detected)")
+        choice = input("是否退出程序？(Exit program?) (y/N): ").strip().lower()
         if choice == 'y':
             self._exit_program()
 
     def _configure_api_mode(self):
-        """配置API模式"""
-        if CURRENT_LANGUAGE == "en":
-            DisplayManager.print_header("🔗 API Mode Configuration")
-            print(f"Current API mode: {'Enabled' if config.api_mode_enabled else 'Disabled'}")
-            print(f"API Provider: {getattr(config, 'api_provider', 'custom')}")
-            print(f"API Base URL: {getattr(config, 'api_base_url', '')}")
-            print(f"API URL: {config.api_url}")
-            print(f"API Model: {config.api_model}")
-            print(f"API Key: {'Set' if config.api_key else 'Not set'}")
-            print(f"Model 1 uses API: {'Yes' if config.model_1_use_api else 'No'}")
-            print(f"Model 2 uses API: {'Yes' if config.model_2_use_api else 'No'}")
-            print(f"Coordinator uses API: {'Yes' if config.coordinator_use_api else 'No'}")
-            DisplayManager.print_separator()
-            enable_api = InputValidator.get_yes_no_input("Enable API mode?", default=config.api_mode_enabled)
-        else:
-            DisplayManager.print_header("🔗 API模式配置")
-            print(f"当前API模式状态：{'已启用' if config.api_mode_enabled else '未启用'}")
-            print(f"API提供方：{getattr(config, 'api_provider', 'custom')}")
-            print(f"API基础地址：{getattr(config, 'api_base_url', '')}")
-            print(f"API地址：{config.api_url}")
-            print(f"API模型：{config.api_model}")
-            print(f"API密钥：{'已设置' if config.api_key else '未设置'}")
-            print(f"模型1使用API：{'是' if config.model_1_use_api else '否'}")
-            print(f"模型2使用API：{'是' if config.model_2_use_api else '否'}")
-            print(f"协调AI使用API：{'是' if config.coordinator_use_api else '否'}")
-            DisplayManager.print_separator()
-            enable_api = InputValidator.get_yes_no_input("是否启用API模式？", default=config.api_mode_enabled)
+        """配置API模式 (Configure API mode)"""
+        DisplayManager.print_header("🔗 API模式配置 (API Mode Configuration)")
+        api_status = "已启用/Enabled" if config.api_mode_enabled else "未启用/Disabled"
+        key_status = "已设置/Set" if config.api_key else "未设置/Not set"
+        m1_api = "是/Yes" if config.model_1_use_api else "否/No"
+        m2_api = "是/Yes" if config.model_2_use_api else "否/No"
+        coord_api = "是/Yes" if config.coordinator_use_api else "否/No"
+        
+        print(f"当前API模式状态 (Current API mode)：{api_status}")
+        print(f"API提供方 (API Provider)：{getattr(config, 'api_provider', 'custom')}")
+        print(f"API基础地址 (API Base URL)：{getattr(config, 'api_base_url', '')}")
+        print(f"API地址 (API URL)：{config.api_url}")
+        print(f"API模型 (API Model)：{config.api_model}")
+        print(f"API密钥 (API Key)：{key_status}")
+        print(f"模型1使用API (Model 1 uses API)：{m1_api}")
+        print(f"模型2使用API (Model 2 uses API)：{m2_api}")
+        print(f"协调AI使用API (Coordinator uses API)：{coord_api}")
+        DisplayManager.print_separator()
+        enable_api = InputValidator.get_yes_no_input("是否启用API模式？(Enable API mode?) (y/n): ", default=config.api_mode_enabled)
         if enable_api:
             # 逐个配置：模型1、模型2、协调AI
             any_use_api = False
@@ -4745,32 +5135,20 @@ class InteractiveInterface:
                 else:
                     print("✅ 系统重新初始化完成")
             except (AICouncilException, requests.exceptions.RequestException, ValueError) as e:
-                if CURRENT_LANGUAGE == "en":
-                    print(f"❌ Reinitialization failed: {e}")
-                else:
-                    print(f"❌ 重新初始化失败: {e}")
+                print(f"❌ 重新初始化失败 (Reinitialization failed): {e}")
 
         else:
             config.api_mode_enabled = False
-            if CURRENT_LANGUAGE == "en":
-                print("✅ API mode disabled")
-            else:
-                print("✅ 已禁用API模式")
+            print("✅ 已禁用API模式 (API mode disabled)")
 
         DisplayManager.print_separator()
 
     def _exit_program(self):
-        """退出程序"""
-        if CURRENT_LANGUAGE == "en":
-            print(f"\n📊 Session Statistics:")
-            print(f"  Session ID: {self.scheduler.session_id}")
-            print(f"  Total Records: {len(self.scheduler.history_manager.history)}")
-            print("\n👋 Goodbye!")
-        else:
-            print(f"\n📊 会话统计：")
-            print(f"  会话ID：{self.scheduler.session_id}")
-            print(f"  总记录数：{len(self.scheduler.history_manager.history)}")
-            print("\n👋 再见！")
+        """退出程序 (Exit program)"""
+        print(f"\n📊 会话统计 (Session Statistics)：")
+        print(f"  会话ID (Session ID)：{self.scheduler.session_id}")
+        print(f"  总记录数 (Total Records)：{len(self.scheduler.history_manager.history)}")
+        print("\n👋 再见！(Goodbye!)")
 
         # 清理资源
         self.scheduler.cleanup()
