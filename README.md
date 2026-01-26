@@ -1,59 +1,41 @@
-# MA-CP-Protocol
-🚀MA-CP:定义多AI协作的开放协议 | An open protocol for multi-AI team collaboration
+# MA-CP: Multi-Agent Collaboration Protocol 🧠
+> **Stop trusting a single AI. Let them debate, verify, and reach consensus.**
+> **拒绝单一模型的幻觉。通过多智能体辩论与共识机制，获取更客观、更精准的决策。**
 
-# 🧠 MA-CP：多智能体协作协议
-**Multi-Agent Collaboration Protocol**
+[在这里放一张 GIF 动图：左边 Llama3 提出观点，右边 Qwen 反驳，中间裁判总结]
+*(建议：如果没有 GIF，先放一张运行截图，展示不同颜色的文字代表不同 AI 在吵架)*
 
-# MA CP: Multi-Agent Collaboration Protocol
-**The Protocol for AI Consensus Through Structured Debate.**
+## ⚡️ What is this? (这是什么？)
 
-> This project proposes a protocol layer for enabling trustworthy, structured debate and consensus formation among specialized AI agents. It aims to move beyond chaotic multi-agent chats toward a governed "parliamentary" system where knowledge can be accumulated as assets.
->
-> **Status:** Early-stage vision and specification. We are actively seeking thought partners and contributors.
->
-> *For detailed documentation in Chinese, please see below.*
----
-> 我们正在尝试回答一个问题：当AI不再单打独斗，它们应该如何像团队一样思考？。
+MA-CP 是一个**多智能体协作框架**，它不仅仅是让两个 AI 聊天，而是引入了**“议会制”**流程。
+它解决了单体 LLM 的三大痛点：
+1.  **幻觉 (Hallucination)**：通过对手（Challenger）的质疑来纠正错误。
+2.  **偏见 (Bias)**：引入不同视角的角色（如激进派 vs 保守派）进行对冲。
+3.  **缺乏深度 (Shallow Reasoning)**：通过多轮辩论强制模型进行 System 2 级别的深思。
 
-⚠️ 项目状态声明
-MA CP 是一个 实验性、前瞻性的协议提案，目前处于 v0.1-alpha 概念验证阶段。我们正在寻找首批开发者、研究者与思想同路人，以共同完善规范与参考实现。我们珍视建设性的批评与代码贡献，并深知前路漫长。
+## 🛠 Features (核心功能)
 
-## ❓ 解决什么问题？
+*   **⚔️ Debate & Consensus (辩论共识模式)**: 核心功能。两个 AI 针对一个问题进行多轮辩论，由 Referee AI 实时计算共识度（Consensus Score）。只有共识度 >80% 或达到回合上限才输出最终结论。
+*   **🏟️ Local Arena (本地竞技场)**: 想知道 `Llama-3` 和 `DeepSeek-Coder` 谁写代码更好？让它们同台竞技，直观对比。
+*   **🔌 Hybrid Support (混合架构)**: 支持本地 **Ollama** 模型与云端 API (OpenAI/Claude/DeepSeek) 混用。让 GPT-4 当裁判，本地小模型当辩手。
+*   **🎭 Role-Playing System (角色系统)**: 内置 11+ 预设角色（魔鬼代言人、逻辑学家、事实核查员等）。
+*   **💾 Structured Logs (结构化存档)**: 所有的思考过程均可导出为日志，便于复盘和数据集构建。
 
-当今的AI，无论是“通才”大模型还是“专才”小模型，本质上仍是 **“单打独斗”** 。它们在一个大脑内处理所有任务，面临**知识盲区、思维定式与自我纠正困难**。
+## 🎯 Use Cases (应用场景)
 
-## 🚀 我们提供什么方案？
+*   **代码审查**: 让 Agent A 写代码，Agent B 找 Bug，Agent C 总结修复方案。
+*   **客观研报**: 让 Agent A 代表看多方，Agent B 代表看空方，生成平衡的市场分析。
+*   **数据清洗**: 两个小模型互相验证数据的准确性。
 
-**MA-CP 不是另一个AI模型，而是一个全新的协作层协议。**
-
-它为AI世界引入了 **“议会制”** 或 **“主教练”** 机制。我们不生产新的“运动员”，而是制定 **“团队战术与沟通规则”** ，让多个各有所长的AI（如分析师、创造者、批判者）能够围绕一个问题，进行**角色扮演、辩论与协同**，最终产出一个经过深思熟虑、视角更全面的“团队决策”。
-
-**简单说：如果传统AI是单核CPU，MA-CP就是让多个CPU核心高效协同工作的调度算法。**
-
----
-
-## ✨ 核心特性
-
-- **🧩 模型无关的协议层**：支持接入任何兼容的本地模型。
-- **🎭 角色扮演系统**：为AI赋予“系统架构师”、“魔鬼代言人”、“律师”等角色，进行针对性辩论。
-- **⚖️ 智能协调与共识**：内置协调机制，自动总结辩论并检测共识，避免无限空转。
-- **📊 过程可视化**：完整展示思考链路，输出不只是结果，更是可追溯的决策过程。
-
----
 
 ## 🗺️ 愿景与未来
 
-MA-CP 始于一个简单的“多AI辩论”脚本，但其长期愿景是成为 **异构AI世界间广泛兼容的“协作层标准”** 。我们正在探索：
-- **分层分布式协作**：支持数十至上百个智能体的高效组织。
-- **动态信誉系统**：让协作网络具备自我优化的能力。
-- **群体智慧涌现**：迈向更高级的集体智能形态。
-
+MA-CP 始于一个简单的“多AI辩论”脚本，长期愿景(/vision.md)
 **这不仅仅是一个工具，更是一次关于“AI如何思考”的实验。**
 
 ---
 
-> ## 🚀 快速开始
-
+> ## 🚀 快速开始 (Quick Start )
 1.  **安装基础环境**：确保已安装 [Python 3.10+](https://www.python.org/downloads/) 和 [Ollama](https://ollama.com/)，并至少下载两个模型（如 `llama3.1:8b`）。
 2.  **克隆项目**：
     ```bash
