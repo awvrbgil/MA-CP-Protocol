@@ -5,11 +5,12 @@ MACP: Multi-Agent Collaboration Platform (多AI协作平台)
 ===============================================================================
 
 核心功能：
-├── 🤖 AI辩论系统 - 支持9种专业角色，多回合智能辩论
+├── 🤖 AI辩论系统 - 支持16种专业角色，多回合智能辩论
+├── 🏆 辩论赛模式 - AI对抗辩论，裁判判定胜负
 ├── 🎯 共识度检测 - AI深度分析，实时监控辩论共识
-├── 🐢 海龟汤游戏 - AI推理问答互动模式
 ├── 📊 并行提问 - 同时向多个AI模型提问
-├── 🔄 智能结束 - 共识度达70%自动总结
+├── 🔄 智能结束 - 共识度达标自动总结
+├── 🛡️ 防幻觉系统 - 自动检测问题类型，纠正事实错误
 └── 📝 历史记录 - 完整的对话和辩论保存
 
 技术特性：
@@ -142,7 +143,7 @@ LANG_DICT = {
     "cmd_history": {"zh": "查看历史记录", "en": "View history"},
     "cmd_api": {"zh": "配置API模式", "en": "Configure API mode"},
     "cmd_debate": {"zh": "进入辩论模式", "en": "Enter debate mode"},
-    "cmd_turtle": {"zh": "进入海龟汤模式", "en": "Enter turtle soup mode"},
+    "cmd_competition": {"zh": "进入辩论赛模式", "en": "Enter competition mode"},
     "cmd_consensus": {"zh": "配置共识检测", "en": "Configure consensus detection"},
     "cmd_language": {"zh": "切换语言", "en": "Switch language"},
     "cmd_exit": {"zh": "退出程序", "en": "Exit program"},
@@ -203,7 +204,7 @@ LANG_DICT = {
     "mode": {"zh": "模式", "en": "Mode"},
     "parallel": {"zh": "并行", "en": "Parallel"},
     "debate": {"zh": "辩论", "en": "Debate"},
-    "turtle_soup": {"zh": "海龟汤", "en": "Turtle Soup"},
+    "competition": {"zh": "辩论赛", "en": "Competition"},
     "debate_complete": {"zh": "✅ 辩论完成", "en": "✅ Debate complete"},
     "total_time": {"zh": "总耗时", "en": "Total time"},
     "seconds": {"zh": "秒", "en": "seconds"},
@@ -1413,7 +1414,6 @@ class Config:
 
         # ============ 性能和模式配置 ============
         self.optimize_memory = False                # 是否启用内存优化模式（实验性）
-        self.turtle_soup_max_rounds = 10            # 海龟汤推理游戏的最大回合数
         self.streaming_output = True                # 是否启用流式输出
 
         # ============ 语言和界面配置 ============
@@ -2708,10 +2708,8 @@ class AICouncilScheduler:
                 return self._parallel_ask(question)
             elif mode == "debate":
                 return self._debate_ask(question, role1, role2)
-            elif mode == "turtle_soup":
-                return self._turtle_soup_ask(question, role1, role2)
             else:
-                raise ValueError(f"未知模式: {mode}")
+                raise ValueError(f"未知模式 (Unknown mode): {mode}")
         except Exception as e:
             logger.error(f"处理问题时发生错误: {e}")
             return []
@@ -3404,143 +3402,6 @@ Please be objective and balanced in your analysis."""
                 print(f"❌ 协调AI分析失败")
             return f"协调分析失败"
 
-    # ==================== 【海龟汤模式】 ====================
-    def _turtle_soup_ask(self, question: str, role1: Optional[str] = None, role2: Optional[str] = None) -> List[Dict[str, Any]]:
-        """海龟汤模式"""
-        DisplayManager.print_header("🐢 海龟汤模式")
-        print("规则：")
-        print("1. 两个AI会轮流向您提问")
-        print("2. 每个AI每回合只能问一个问题")
-        print("3. 您只能回答 '是'、'否' 或 '不知道'")
-        print("4. 目标是让AI猜出谜底")
-        DisplayManager.print_separator()
-
-        role1 = role1 or "侦探"
-        role2 = role2 or "推理者"
-
-        history = []
-        round_count = 0
-        max_rounds = self.config.turtle_soup_max_rounds
-
-        while round_count < max_rounds:
-            round_count += 1
-            DisplayManager.print_separator("-", 40)
-            print(f"第{round_count}回合")
-            DisplayManager.print_separator("-", 40)
-
-            # 交替提问
-            current_role = role1 if round_count % 2 == 1 else role2
-            current_model = self.config.model_1 if round_count % 2 == 1 else self.config.model_2
-
-            # 生成问题
-            if round_count == 1:
-                prompt = f"""你是{current_role}，正在玩海龟汤游戏。
-谜面：{question}
-你的任务是向玩家提问，每次只能问一个问题，玩家只能回答是、否或不知道。
-请开始你的第一个问题（只问一个问题）："""
-            else:
-                history_text = "\n".join(history[-4:])  # 最近4条历史
-                prompt = f"""你是{current_role}，正在玩海龟汤游戏。
-谜面：{question}
-历史问答：
-{history_text}
-请基于以上信息问下一个问题（只问一个问题）："""
-
-            client, model_id, is_api = self._get_client_for_model(current_model)
-            if is_api:
-                result = client.generate_response(prompt, max_tokens=200, temperature=self.config.temperature)
-            else:
-                result = client.generate_response(model_id, prompt, max_tokens=200,
-                                                temperature=self.config.temperature, timeout=self.config.timeout,
-                                                streaming=self.config.streaming_output)
-
-            if result.get("success"):
-                question_text = result.get("response", "").strip()
-                print(f"\n❓ {current_role} 提问：{question_text}")
-
-                # 用户回答
-                answer = self._get_turtle_soup_answer()
-                if answer == "结束":
-                    print("👤 用户选择结束游戏")
-                    break
-
-                history.append(f"问：{question_text}")
-                history.append(f"答：{answer}")
-
-                # 猜测答案
-                if round_count % 3 == 0:
-                    guess = self._attempt_guess(current_model, current_role, question, history)
-                    if guess and self._confirm_guess(guess):
-                        print(f"🎉 恭喜！{current_role} 猜对了！")
-                        break
-            else:
-                print(f"❌ {current_role} 提问失败")
-                break
-
-        # 最终总结
-        self._finalize_turtle_soup(question, history)
-        return []
-
-    @staticmethod
-    def _get_turtle_soup_answer() -> str:
-        """获取海龟汤答案"""
-        while True:
-            answer = input("\n您的回答（是/否/不知道/结束）: ").strip().lower()
-            if answer in ["是", "否", "不知道", "结束"]:
-                return answer
-            print("❌ 请只回答：是、否、不知道 或 结束")
-
-    def _attempt_guess(self, model: str, role: str, question: str, history: List[str]) -> Optional[str]:
-        """尝试猜测答案"""
-        guess_prompt = f"""基于以下信息，请猜测谜底：
-谜面：{question}
-历史问答：
-{"\n".join(history[-6:])}
-请给出你的猜测（如果还不确定可以说'还需要更多信息'）："""
-
-        client, model_id, is_api = self._get_client_for_model(model)
-        if is_api:
-            guess_result = client.generate_response(guess_prompt, max_tokens=300, temperature=self.config.temperature)
-        else:
-            guess_result = client.generate_response(model_id, guess_prompt, max_tokens=300,
-                                                  temperature=self.config.temperature, timeout=self.config.timeout,
-                                                  streaming=self.config.streaming_output)
-        if guess_result.get("success"):
-            guess = guess_result.get("response", "").strip()
-            print(f"\n🤔 {role} 猜测：{guess}")
-            return guess
-        return None
-
-    @staticmethod
-    def _confirm_guess(guess: str) -> bool:
-        """确认猜测"""
-        _ = guess  # 标记参数已知但未使用
-        confirm = input("猜对了吗？（是/否）: ").strip().lower()
-        return confirm == "是"
-
-    def _finalize_turtle_soup(self, question: str, history: List[str]):
-        """完成海龟汤游戏"""
-        DisplayManager.print_header("📝 海龟汤游戏结束")
-
-        if history:
-            final_prompt = f"""基于以下海龟汤游戏记录，请总结：
-谜面：{question}
-历史记录：
-{"\n".join(history)}
-请给出最终分析和谜底解释："""
-
-            coord_client, coord_model, is_api = self._get_client_for_model(self.config.coordinator_model)
-            if is_api:
-                final_result = coord_client.generate_response(final_prompt, max_tokens=500, temperature=self.config.temperature)
-            else:
-                final_result = coord_client.generate_response(coord_model, final_prompt, max_tokens=500,
-                                                            temperature=self.config.temperature, timeout=self.config.timeout,
-                                                            streaming=False)
-            if final_result.get("success"):
-                summary = final_result.get("response", "")
-                print(f"\n📋 最终总结：")
-                print(summary[:self.config.display_length] +
-                      ("..." if len(summary) > self.config.display_length else ""))
 
     # ==================== 【辅助方法】 ====================
     def _display_results(self, results: List[Dict[str, Any]]):
@@ -4134,7 +3995,7 @@ class InteractiveInterface:
     支持的主要命令：
     - 直接提问（并行模式）
     - /debate（辩论模式）
-    - /turtle（海龟汤模式）
+    - /competition（辩论赛模式）
     - /consensus（共识配置）
     - /help（帮助信息）
     """
@@ -4200,7 +4061,6 @@ class InteractiveInterface:
             ("api", "配置API模式 (Configure API mode)"),
             ("debate", "辩论模式-寻求共识 (Debate mode - seek consensus)"),
             ("competition", "辩论赛模式-判定胜负 (Competition - judge winner)"),
-            ("turtle", "海龟汤模式 (Turtle soup mode)"),
             ("consensus", "配置共识检测 (Configure consensus detection)"),
             ("streaming", "切换流式输出 (Toggle streaming output)"),
             ("optimize", "开启优化模式 (Enable optimize mode)"),
@@ -4244,7 +4104,6 @@ class InteractiveInterface:
             'api': self._configure_api_mode,
             'debate': self._enter_debate_mode,
             'competition': self._enter_competition_mode,
-            'turtle': self._enter_turtle_soup_mode,
             'consensus': self._configure_consensus,
             'optimize': self._toggle_optimize_mode,
             'roles': self._show_roles,
@@ -4375,28 +4234,6 @@ class InteractiveInterface:
             logger.error(f"辩论赛失败: {e}")
             print(f"❌ 辩论赛失败 (Competition failed): {e}")
 
-    def _enter_turtle_soup_mode(self):
-        """进入海龟汤模式 (Enter turtle soup mode)"""
-        DisplayManager.print_header("🐢 海龟汤模式 (Turtle Soup Mode)")
-
-        question = input("\n请输入海龟汤谜面 (Enter riddle)：").strip()
-        if not question:
-            print("❌ 谜面不能为空 (Riddle cannot be empty)")
-            return
-
-        role1 = input("\nAI1角色 (AI1 role) [默认/default: 侦探/Detective]: ").strip() or "侦探"
-        role2 = input("AI2角色 (AI2 role) [默认/default: 推理者/Reasoner]: ").strip() or "推理者"
-
-        print(f"\n🎮 开始海龟汤游戏 (Starting Turtle Soup game)")
-        print(f"谜面 (Riddle)：{question}")
-        print(f"AI角色 (AI roles)：{role1} 和/and {role2}")
-        DisplayManager.print_separator()
-
-        try:
-            self.scheduler.ask_both_models(question, mode="turtle_soup", role1=role1, role2=role2)
-        except Exception as e:
-            logger.error(f"海龟汤游戏失败: {e}")
-            print(f"❌ 海龟汤游戏失败: {e}")
 
     @staticmethod
     def _toggle_optimize_mode():
