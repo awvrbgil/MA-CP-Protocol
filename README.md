@@ -2,8 +2,6 @@
 > **Stop trusting a single AI. Let them debate, verify, and reach consensus.**
 > **拒绝单一模型的幻觉。通过多智能体辩论与共识机制，获取更客观、更精准的决策。**
 
-[在这里放一张 GIF 动图：左边 Llama3 提出观点，右边 Qwen 反驳，中间裁判总结]
-*(建议：如果没有 GIF，先放一张运行截图，展示不同颜色的文字代表不同 AI 在吵架)*
 
 ## ⚡️ What is this? (这是什么？)
 
